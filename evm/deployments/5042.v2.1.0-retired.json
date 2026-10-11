@@ -1,0 +1,73 @@
+{
+  "network": "arc-mainnet",
+  "chainId": 5042,
+  "version": "2.1.0",
+  "proxy": "0x9EEC5aD4FC092fD468A8114007e541238F4Ba5ee",
+  "implementation": "0xbB074ED383dA5C99756D72b62f7Fdff97A8c9022",
+  "owner": "0x0141781Aad86A023FaC70C6Aad0A8E7253164DB6",
+  "backendSigner": "0x299E4E56e9F05A21414A62479DA1514C20aA61e8",
+  "deployedAt": 1790839139,
+  "explorer": "https://explorer.arc.io/address/0x9EEC5aD4FC092fD468A8114007e541238F4Ba5ee",
+  "verified": false,
+  "compiler": {
+    "solc": "0.8.30",
+    "evmVersion": "cancun",
+    "optimizerRuns": 200,
+    "viaIR": true
+  },
+  "deployTxs": {
+    "implementation": "0x76e37192cff681a3187e2178fe1c98cdb34a73a3b3f8255e2e6f313bccb83b9b",
+    "proxy": "0x2525d23e2cfa8fbc7963f093c1176c44a6bdb47bc5e8a7db8a0a0386230245c5"
+  },
+  "arcNotes": {
+    "nativeIsAliased": "Same model as Arc testnet (deployments/5042002.json): native USDC and the 6-decimal ERC-20 at 0x3600...0000 are one balance. setNativeAliasToken(0x3600...) was called FIRST, which closes the native path; all value moves through the 6-decimal view. Mainnet USDC at 0x3600...0000 verified on-chain 2026-10-01: symbol()=USDC, decimals()=6.",
+    "gasIsUsdc": "Gas is paid in native USDC from the sender's own balance. Clients must leave headroom for gas rather than offering a MAX-out-the-balance payment.",
+    "rpc": "https://rpc.mainnet.arc.io (chainId 5042 verified via eth_chainId)"
+  },
+  "postDeployConfig": [
+    {
+      "step": 1,
+      "call": "setNativeAliasToken(0x3600000000000000000000000000000000000000)",
+      "tx": "0xd075ee3e6f6a9dacb7c9faf404be94894099f1ddd94200a2a0910b329e3ddde0"
+    },
+    {
+      "step": 2,
+      "call": "addAllowedPaymentToken(0x3600000000000000000000000000000000000000)",
+      "tx": "0x8dd125793a583571518bb18a51deb1f3f65aa58173bc6aa534cb512ac1833748"
+    },
+    {
+      "step": 3,
+      "call": "queueSweepCap(USDC, 1000000000)",
+      "tx": "0x5221d1f921cd4cd7db32d94cdd34b8efb7916927743569c0abb741b8a482dbfc"
+    },
+    {
+      "step": 4,
+      "call": "applySweepCap(USDC)",
+      "tx": "0x91d60a93d52e9323c09d61eda984bd38678e3e2b4fd202f98cd84f6f0853f3ef"
+    },
+    {
+      "step": 5,
+      "call": "setWithdrawalDelay(86400)",
+      "tx": "0x9753c45d15a3de76a5f7ad7d659da2f127c1b2cd1d4674a0d9f8326d68deffb4"
+    }
+  ],
+  "state": {
+    "allowedPaymentTokens": [
+      "0x3600000000000000000000000000000000000000"
+    ],
+    "nativeAliasToken": "0x3600000000000000000000000000000000000000",
+    "sweepCap": {
+      "0x3600000000000000000000000000000000000000": "1000000000",
+      "native": "0"
+    },
+    "withdrawalDelay": 86400,
+    "verifiedOnchain": "2026-10-01 via cast call: version()=2.1.0, owner()=deployer, backendSigner()=0x299E4E56...A61e8, nativeAliasToken()=USDC ERC-20, allowedPaymentTokens(USDC)=true, sweepCap(USDC)=1000000000, withdrawalDelay()=86400, ERC-1967 implementation slot = implementation above"
+  },
+  "todo": {
+    "backendSigner": "0x299E4E56... derives from the private key committed in api/.env.example, so it is PUBLIC and anyone can forge EIP-712 merchant quotes (same posture as the Monad mainnet deploy). Rotate with rotateBackendSigner(address) and update EVM_QUOTE_SIGNER_PRIVATE_KEY in the deployed API BEFORE this chain carries real value.",
+    "ownership": "Single EOA owner (the deployer). Consider a multisig (Safe) before scaling volume; upgradeToAndCall is owner-only and instant.",
+    "verification": "Not verified. explorer.arc.io/api is behind a Cloudflare challenge (same as monadvision.com); retry `forge verify-contract --chain 5042 --verifier blockscout --verifier-url https://explorer.arc.io/api <implementation> src/TakumiPay.sol:TakumiPay` from a browser-verified session or use the explorer UI.",
+    "addressCollision": "Proxy/implementation match the Arc testnet deployment (deployments/5042002.json): same deployer key and same nonce (2) on a fresh chain, a genuine CREATE match, not a copy-paste.",
+    "e2eNotYetRun": "No live smoke test (createTransaction / depositPoints / processMerchantPayment) has been run on mainnet; config was verified by view calls only."
+  }
+}

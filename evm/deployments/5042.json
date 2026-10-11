@@ -2,12 +2,12 @@
   "network": "arc-mainnet",
   "chainId": 5042,
   "version": "2.1.0",
-  "proxy": "0x9EEC5aD4FC092fD468A8114007e541238F4Ba5ee",
-  "implementation": "0xbB074ED383dA5C99756D72b62f7Fdff97A8c9022",
-  "owner": "0x0141781Aad86A023FaC70C6Aad0A8E7253164DB6",
-  "backendSigner": "0x299E4E56e9F05A21414A62479DA1514C20aA61e8",
-  "deployedAt": 1790839139,
-  "explorer": "https://explorer.arc.io/address/0x9EEC5aD4FC092fD468A8114007e541238F4Ba5ee",
+  "proxy": "0xF44Af1f2b422D66D60aAE5ceFCcbCBF299D01aBF",
+  "implementation": "0x752e7760ED69964C6610B8f1dec40aCcEbbfea31",
+  "owner": "0xc84dEa8032fF10c0cf0a20e0C709299d3E832146",
+  "backendSigner": "0xAAE453E99614aD70BBB7521947D82f8Aa0eC1D2C",
+  "deployedAt": 1791552256,
+  "explorer": "https://explorer.arc.io/address/0xF44Af1f2b422D66D60aAE5ceFCcbCBF299D01aBF",
   "verified": false,
   "compiler": {
     "solc": "0.8.30",
@@ -15,9 +15,14 @@
     "optimizerRuns": 200,
     "viaIR": true
   },
+  "supersedes": {
+    "file": "5042.v2.1.0-retired.json",
+    "proxy": "0x9EEC5aD4FC092fD468A8114007e541238F4Ba5ee",
+    "reason": "Production redeploy with a fresh deployer, a freshly generated backend signer, and a new owner. The previous deployment held 0 USDC and used the public signer key from api/.env.example."
+  },
   "deployTxs": {
-    "implementation": "0x76e37192cff681a3187e2178fe1c98cdb34a73a3b3f8255e2e6f313bccb83b9b",
-    "proxy": "0x2525d23e2cfa8fbc7963f093c1176c44a6bdb47bc5e8a7db8a0a0386230245c5"
+    "implementation": "0x0a4f9c56955e6ba2ee81597514340c369cbebdc53966d6b8186a761d56f33bdb",
+    "proxy": "0x7f94eb2c31a7ffa4ee34a4d3511f8648febf718c8ca025c024b772c6ce95de3f"
   },
   "arcNotes": {
     "nativeIsAliased": "Same model as Arc testnet (deployments/5042002.json): native USDC and the 6-decimal ERC-20 at 0x3600...0000 are one balance. setNativeAliasToken(0x3600...) was called FIRST, which closes the native path; all value moves through the 6-decimal view. Mainnet USDC at 0x3600...0000 verified on-chain 2026-10-01: symbol()=USDC, decimals()=6.",
@@ -27,28 +32,38 @@
   "postDeployConfig": [
     {
       "step": 1,
-      "call": "setNativeAliasToken(0x3600000000000000000000000000000000000000)",
-      "tx": "0xd075ee3e6f6a9dacb7c9faf404be94894099f1ddd94200a2a0910b329e3ddde0"
+      "call": "setNativeAliasToken(0x3600...0000)",
+      "tx": "0x69107ab32a410e86b3a4819242db7de4b22fc4b472dc03df3c026b92835a3782"
     },
     {
       "step": 2,
-      "call": "addAllowedPaymentToken(0x3600000000000000000000000000000000000000)",
-      "tx": "0x8dd125793a583571518bb18a51deb1f3f65aa58173bc6aa534cb512ac1833748"
+      "call": "addAllowedPaymentToken(0x3600...0000)",
+      "tx": "0xdbb5da3c32f98489e15df64712c7db352250f40d3c56977b16c4af41db405529"
     },
     {
       "step": 3,
       "call": "queueSweepCap(USDC, 1000000000)",
-      "tx": "0x5221d1f921cd4cd7db32d94cdd34b8efb7916927743569c0abb741b8a482dbfc"
+      "tx": "0xcdeb85838114e1aa4f2978f0fdaa49640cb13aedb4b18d39fbc4699fa5762f8c"
     },
     {
       "step": 4,
       "call": "applySweepCap(USDC)",
-      "tx": "0x91d60a93d52e9323c09d61eda984bd38678e3e2b4fd202f98cd84f6f0853f3ef"
+      "tx": "0x06aa3a4dafbed69db77f801129240fc89d2b650af0d2167c73f03e11a3abab81"
     },
     {
       "step": 5,
       "call": "setWithdrawalDelay(86400)",
-      "tx": "0x9753c45d15a3de76a5f7ad7d659da2f127c1b2cd1d4674a0d9f8326d68deffb4"
+      "tx": "0x27d21194373992b69952911636aff0083fd8b2b28c3098a31c7fc4b1ded4139d"
+    },
+    {
+      "step": 6,
+      "call": "transferOwnership(0xc84dEa8032fF10c0cf0a20e0C709299d3E832146)",
+      "tx": "0x7f30d524c12466ab5fc825b439516c07ed0bb43c00805e2c8d06516b9e36577b"
+    },
+    {
+      "step": 7,
+      "call": "acceptOwnership() from 0xc84dEa8032fF10c0cf0a20e0C709299d3E832146",
+      "tx": "0x53a819f0f043a07db6b1459fd14dbf946e06f06879b6ea917d1db673277674d9"
     }
   ],
   "state": {
@@ -61,13 +76,12 @@
       "native": "0"
     },
     "withdrawalDelay": 86400,
-    "verifiedOnchain": "2026-10-01 via cast call: version()=2.1.0, owner()=deployer, backendSigner()=0x299E4E56...A61e8, nativeAliasToken()=USDC ERC-20, allowedPaymentTokens(USDC)=true, sweepCap(USDC)=1000000000, withdrawalDelay()=86400, ERC-1967 implementation slot = implementation above"
+    "verifiedOnchain": "2026-10-11 via cast call: version()=2.1.0, owner()=0xc84d...2146, pendingOwner()=0x0, backendSigner()=0xAAE453E9...1D2C, nativeAliasToken()=USDC ERC-20, allowedPaymentTokens(USDC)=true, sweepCap(USDC)=1000000000, withdrawalDelay()=86400, ERC-1967 implementation slot = implementation above. Config verified on 2026-10-09 before the handover."
   },
   "todo": {
-    "backendSigner": "0x299E4E56... derives from the private key committed in api/.env.example, so it is PUBLIC and anyone can forge EIP-712 merchant quotes (same posture as the Monad mainnet deploy). Rotate with rotateBackendSigner(address) and update EVM_QUOTE_SIGNER_PRIVATE_KEY in the deployed API BEFORE this chain carries real value.",
-    "ownership": "Single EOA owner (the deployer). Consider a multisig (Safe) before scaling volume; upgradeToAndCall is owner-only and instant.",
-    "verification": "Not verified. explorer.arc.io/api is behind a Cloudflare challenge (same as monadvision.com); retry `forge verify-contract --chain 5042 --verifier blockscout --verifier-url https://explorer.arc.io/api <implementation> src/TakumiPay.sol:TakumiPay` from a browser-verified session or use the explorer UI.",
-    "addressCollision": "Proxy/implementation match the Arc testnet deployment (deployments/5042002.json): same deployer key and same nonce (2) on a fresh chain, a genuine CREATE match, not a copy-paste.",
-    "e2eNotYetRun": "No live smoke test (createTransaction / depositPoints / processMerchantPayment) has been run on mainnet; config was verified by view calls only."
+    "ownership": "Done: ownership accepted by 0xc84d...2146 (tx in postDeployConfig step 7). The deployer 0x963D...8593 (keystore takumi-arc-prod-deployer) has no remaining role on the contract. Single EOA owner; consider a Safe before scaling volume (upgradeToAndCall is owner-only and instant).",
+    "apiCutover": "Pending: update the SmartContract row for chain 5042 to the new proxy on the remote prod DB, set EVM_QUOTE_SIGNER_PRIVATE_KEY to the key for backendSigner, restart the API, clear the Valkey SmartContract cache. Other EVM chains (Monad, Arbitrum) are staging and still trust the old public signer.",
+    "verification": "Not verified; explorer.arc.io/api is behind a Cloudflare challenge. Use the explorer UI or a browser-verified session.",
+    "e2eNotYetRun": "No live smoke test (depositPoints / processMerchantPayment) has been run on this deployment yet."
   }
 }
