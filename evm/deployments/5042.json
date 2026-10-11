@@ -80,8 +80,8 @@
   },
   "todo": {
     "ownership": "Done: ownership accepted by 0xc84d...2146 (tx in postDeployConfig step 7). The deployer 0x963D...8593 (keystore takumi-arc-prod-deployer) has no remaining role on the contract. Single EOA owner; consider a Safe before scaling volume (upgradeToAndCall is owner-only and instant).",
-    "apiCutover": "Pending: update the SmartContract row for chain 5042 to the new proxy on the remote prod DB, set EVM_QUOTE_SIGNER_PRIVATE_KEY to the key for backendSigner, restart the API, clear the Valkey SmartContract cache. Other EVM chains (Monad, Arbitrum) are staging and still trust the old public signer.",
+    "apiCutover": "Done 2026-10-11: SmartContract row for chain 5042 on the remote prod DB points at the new proxy; prod API (Dokploy TakumiPay/production/api) runs with the new EVM_QUOTE_SIGNER_PRIVATE_KEY (derives 0xAAE453E9...1D2C). Dev now runs as a separate Dokploy stack (staging env) with the OLD signer and the old Arc proxy, so Monad/Arbitrum quotes keep working there. Prod no longer signs for Monad/Arbitrum (their contracts still trust the old public signer).",
     "verification": "Not verified; explorer.arc.io/api is behind a Cloudflare challenge. Use the explorer UI or a browser-verified session.",
-    "e2eNotYetRun": "No live smoke test (depositPoints / processMerchantPayment) has been run on this deployment yet."
+    "e2eNotYetRun": "Still pending: live smoke test (depositPoints / processMerchantPayment) against prod after the cutover."
   }
 }
