@@ -1,10 +1,14 @@
 {
-  "programId": "6CCTEtYrk8unNhjYQ7npiLUf1iKQQJU88JSYn8EJLNYy",
-  "configPda": "7L3w3E9agqZpznXgNEKVmFSPT38Hn2GdT7Xr6shf3aap",
-  "owner": "6SCnRCLB7LCEqrBKeSTmt2Gs6hdcs2EcrXviNPyLYHYU",
-  "backendSigner": "C4pvirRb9NHkfnBGo6TXAmYFifcEgpdu8utJNQckjp5f",
-  "mockUsdcMint": "4qFejVSp46Q4SZCGDrXbkFJC1qw5uo1JBnbXLnKZurey",
-  "ownerUsdcAta": "FnzSTT2znmqg8CmT6npKRiZW8dmujFmmgYTfKNoDsbJX",
+  "programId": "Baj91uzqwt8hRaJmke3dV8RdBwjq5MaWEtKNuUFTBBwS",
+  "configPda": "ESfpZWC4XexuLk775GzhHvbHyEBA88a6kyjXHce2ekWb",
+  "owner": "32kGdxMAuUysd3gTiULPiSc4oFB2yaLT32Z8CtJZ3ULa",
+  "upgradeAuthority": "32kGdxMAuUysd3gTiULPiSc4oFB2yaLT32Z8CtJZ3ULa",
+  "backendSigner": "4t5JMUj5Vm4wDPftD2Ss5jmDCAbwpUHBLUSHXaFNKZcx",
+  "usdcMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+  "usdcSweepCap": "100000000000",
+  "deploySignature": "4LWK8FydC6SVAGYkReZnyybe8YMSdzgb68Ni1jVxQrpiWkxeEvgRddYzcMxNdbL44jdPpsVr5AWvXidJ9Pwc7XLg",
   "cluster": "devnet",
-  "setupAt": "2026-04-26T03:17:04.410Z"
+  "deployedAt": "2026-10-12",
+  "binarySize": 765704,
+  "supersedes": "6CCTEtYrk8unNhjYQ7npiLUf1iKQQJU88JSYn8EJLNYy (April 2026 program; pre-allowlist layout, keys lost)"
 }

@@ -1,0 +1,3036 @@
+{
+  "address": "Baj91uzqwt8hRaJmke3dV8RdBwjq5MaWEtKNuUFTBBwS",
+  "metadata": {
+    "name": "takumi_pay",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "TakumiPay Solana Program — merchant payments, transactions, point deposits"
+  },
+  "instructions": [
+    {
+      "name": "accept_ownership",
+      "discriminator": [
+        172,
+        23,
+        43,
+        13,
+        238,
+        213,
+        85,
+        150
+      ],
+      "accounts": [
+        {
+          "name": "new_owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "add_admin",
+      "discriminator": [
+        177,
+        236,
+        33,
+        205,
+        124,
+        152,
+        55,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "admin_pubkey"
+        },
+        {
+          "name": "admin_record",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "add_allowed_payment_token",
+      "docs": [
+        "Allowlists a token for every value-in entrypoint. Pass `Pubkey::default()`",
+        "to allowlist native SOL."
+      ],
+      "discriminator": [
+        102,
+        233,
+        26,
+        59,
+        188,
+        77,
+        132,
+        155
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "allowed_token",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "token_mint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "apply_sweep_cap",
+      "discriminator": [
+        25,
+        233,
+        160,
+        69,
+        231,
+        78,
+        80,
+        204
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "sweep_cap",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "token_mint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "apply_withdrawal_delay",
+      "discriminator": [
+        52,
+        68,
+        136,
+        10,
+        71,
+        68,
+        65,
+        78
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "cancel_ownership_transfer",
+      "discriminator": [
+        2,
+        184,
+        195,
+        105,
+        138,
+        142,
+        154,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "cancel_sweep_cap",
+      "discriminator": [
+        246,
+        238,
+        163,
+        70,
+        124,
+        205,
+        113,
+        195
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "sweep_cap",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "token_mint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "cancel_withdrawal",
+      "discriminator": [
+        183,
+        104,
+        181,
+        250,
+        28,
+        128,
+        210,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "withdrawal_request",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "cancel_withdrawal_delay",
+      "discriminator": [
+        172,
+        255,
+        110,
+        4,
+        206,
+        17,
+        121,
+        128
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_transaction_sol",
+      "discriminator": [
+        15,
+        148,
+        64,
+        222,
+        85,
+        10,
+        108,
+        111
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "tx_record",
+          "writable": true
+        },
+        {
+          "name": "ref_record",
+          "writable": true
+        },
+        {
+          "name": "allowed_token",
+          "docs": [
+            "Native SOL is keyed by `Pubkey::default()`. Absent PDA == token not",
+            "allowlisted, and the instruction fails to deserialize it."
+          ]
+        },
+        {
+          "name": "spending_limit",
+          "optional": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "CreateTransactionParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_transaction_token",
+      "discriminator": [
+        102,
+        151,
+        178,
+        25,
+        248,
+        110,
+        102,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "tx_record",
+          "writable": true
+        },
+        {
+          "name": "ref_record",
+          "writable": true
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "allowed_token",
+          "docs": [
+            "Absent PDA == token not allowlisted, and the instruction fails to",
+            "deserialize it. Gates create_transaction the same way deposit_points",
+            "has always been gated."
+          ]
+        },
+        {
+          "name": "payer_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "spending_limit",
+          "optional": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "CreateTransactionParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "deposit_points",
+      "discriminator": [
+        184,
+        73,
+        55,
+        238,
+        103,
+        247,
+        76,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "allowed_token"
+        },
+        {
+          "name": "point_deposit",
+          "writable": true
+        },
+        {
+          "name": "point_ref_record",
+          "writable": true
+        },
+        {
+          "name": "payer_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "ref_id",
+          "type": "string"
+        },
+        {
+          "name": "ref_id_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "execute_withdrawal_sol",
+      "discriminator": [
+        56,
+        220,
+        82,
+        197,
+        255,
+        165,
+        245,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "withdrawal_request",
+          "writable": true
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "execute_withdrawal_token",
+      "discriminator": [
+        199,
+        121,
+        223,
+        85,
+        242,
+        0,
+        202,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "withdrawal_request",
+          "writable": true
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "recipient_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "backend_signer",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "process_merchant_payment_sol",
+      "discriminator": [
+        6,
+        32,
+        215,
+        30,
+        94,
+        56,
+        25,
+        115
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "merchant_payment",
+          "writable": true
+        },
+        {
+          "name": "platform_fee_account",
+          "writable": true
+        },
+        {
+          "name": "allowed_token",
+          "docs": [
+            "Native SOL is keyed by `Pubkey::default()`. Absent PDA == token not",
+            "allowlisted, and the instruction fails to deserialize it."
+          ]
+        },
+        {
+          "name": "instructions_sysvar"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "MerchantQuoteParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "process_merchant_payment_token",
+      "discriminator": [
+        15,
+        243,
+        125,
+        245,
+        253,
+        85,
+        95,
+        176
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "merchant_payment",
+          "writable": true
+        },
+        {
+          "name": "platform_fee_account",
+          "writable": true
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "allowed_token",
+          "docs": [
+            "Absent PDA == token not allowlisted, and the instruction fails to",
+            "deserialize it. A backend-signed quote is not on its own sufficient —",
+            "the token must also be on the allowlist."
+          ]
+        },
+        {
+          "name": "payer_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "instructions_sysvar"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "MerchantQuoteParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "queue_sweep_cap",
+      "discriminator": [
+        41,
+        57,
+        68,
+        248,
+        192,
+        168,
+        142,
+        135
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "sweep_cap",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "token_mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "cap",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "queue_withdrawal",
+      "discriminator": [
+        153,
+        8,
+        176,
+        235,
+        189,
+        140,
+        146,
+        223
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "withdrawal_request",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "token_mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "recipient",
+          "type": "pubkey"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "is_native",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "queue_withdrawal_delay",
+      "discriminator": [
+        189,
+        112,
+        145,
+        174,
+        67,
+        53,
+        2,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "delay",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "remove_admin",
+      "discriminator": [
+        74,
+        202,
+        71,
+        106,
+        252,
+        31,
+        72,
+        183
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "admin_pubkey"
+        },
+        {
+          "name": "admin_record",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "remove_allowed_payment_token",
+      "discriminator": [
+        91,
+        159,
+        12,
+        130,
+        241,
+        70,
+        218,
+        219
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "allowed_token",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "token_mint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "rotate_backend_signer",
+      "discriminator": [
+        144,
+        238,
+        219,
+        97,
+        210,
+        50,
+        23,
+        119
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_signer",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_paused",
+      "discriminator": [
+        91,
+        60,
+        125,
+        192,
+        176,
+        225,
+        166,
+        218
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "admin_record",
+          "docs": [
+            "Optional admin record — required when caller is not the owner."
+          ],
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_point_deposits_paused",
+      "discriminator": [
+        79,
+        86,
+        19,
+        104,
+        153,
+        181,
+        219,
+        165
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "admin_record",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_spending_limit",
+      "discriminator": [
+        39,
+        48,
+        237,
+        161,
+        49,
+        171,
+        155,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "spending_limit",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_sweep_cap",
+      "discriminator": [
+        89,
+        140,
+        64,
+        106,
+        202,
+        125,
+        121,
+        19
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "sweep_cap",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "token_mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "cap",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_withdrawal_delay",
+      "discriminator": [
+        188,
+        153,
+        14,
+        109,
+        50,
+        127,
+        169,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "delay",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "sweep_merchant_backing_sol",
+      "discriminator": [
+        96,
+        130,
+        106,
+        97,
+        132,
+        125,
+        31,
+        147
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "sweep_cap",
+          "writable": true
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sweep_merchant_backing_token",
+      "discriminator": [
+        62,
+        166,
+        15,
+        135,
+        176,
+        30,
+        247,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "sweep_cap",
+          "writable": true
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "recipient_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sweep_platform_fees_sol",
+      "discriminator": [
+        97,
+        166,
+        239,
+        120,
+        245,
+        106,
+        255,
+        68
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "sweep_cap",
+          "writable": true
+        },
+        {
+          "name": "platform_fee_account",
+          "writable": true
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sweep_platform_fees_token",
+      "discriminator": [
+        247,
+        179,
+        81,
+        65,
+        213,
+        14,
+        71,
+        230
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "sweep_cap",
+          "writable": true
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "platform_fee_account",
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "recipient_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "transfer_ownership",
+      "discriminator": [
+        65,
+        177,
+        215,
+        73,
+        53,
+        45,
+        99,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_owner",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_sol",
+      "discriminator": [
+        145,
+        131,
+        74,
+        136,
+        65,
+        137,
+        42,
+        38
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_token",
+      "discriminator": [
+        136,
+        235,
+        181,
+        5,
+        101,
+        109,
+        57,
+        81
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "recipient_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Admin",
+      "discriminator": [
+        244,
+        158,
+        220,
+        65,
+        8,
+        73,
+        4,
+        65
+      ]
+    },
+    {
+      "name": "AllowedPaymentToken",
+      "discriminator": [
+        163,
+        134,
+        217,
+        162,
+        24,
+        109,
+        24,
+        205
+      ]
+    },
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "MerchantPayment",
+      "discriminator": [
+        91,
+        127,
+        5,
+        117,
+        233,
+        164,
+        146,
+        91
+      ]
+    },
+    {
+      "name": "PlatformFeeAccount",
+      "discriminator": [
+        3,
+        58,
+        42,
+        131,
+        224,
+        90,
+        94,
+        216
+      ]
+    },
+    {
+      "name": "PointDepositRecord",
+      "discriminator": [
+        201,
+        197,
+        66,
+        68,
+        123,
+        98,
+        130,
+        44
+      ]
+    },
+    {
+      "name": "RefRecord",
+      "discriminator": [
+        207,
+        231,
+        200,
+        34,
+        52,
+        56,
+        43,
+        237
+      ]
+    },
+    {
+      "name": "SpendingLimit",
+      "discriminator": [
+        10,
+        201,
+        27,
+        160,
+        218,
+        195,
+        222,
+        152
+      ]
+    },
+    {
+      "name": "SweepCap",
+      "discriminator": [
+        111,
+        238,
+        15,
+        72,
+        238,
+        61,
+        31,
+        250
+      ]
+    },
+    {
+      "name": "TransactionRecord",
+      "discriminator": [
+        206,
+        23,
+        5,
+        97,
+        161,
+        157,
+        25,
+        107
+      ]
+    },
+    {
+      "name": "WithdrawalRequest",
+      "discriminator": [
+        242,
+        88,
+        147,
+        173,
+        182,
+        62,
+        229,
+        193
+      ]
+    }
+  ],
+  "events": [
+    {
+      "discriminator": [
+        23,
+        13,
+        37,
+        90,
+        130,
+        53,
+        75,
+        251
+      ],
+      "name": "AdminAdded"
+    },
+    {
+      "discriminator": [
+        59,
+        133,
+        36,
+        27,
+        156,
+        79,
+        75,
+        146
+      ],
+      "name": "AdminRemoved"
+    },
+    {
+      "discriminator": [
+        221,
+        186,
+        27,
+        176,
+        101,
+        14,
+        59,
+        48
+      ],
+      "name": "AllowedPaymentTokenAdded"
+    },
+    {
+      "discriminator": [
+        170,
+        148,
+        7,
+        24,
+        59,
+        27,
+        119,
+        30
+      ],
+      "name": "AllowedPaymentTokenRemoved"
+    },
+    {
+      "discriminator": [
+        26,
+        237,
+        252,
+        25,
+        217,
+        82,
+        140,
+        116
+      ],
+      "name": "BackendSignerRotated"
+    },
+    {
+      "discriminator": [
+        253,
+        21,
+        57,
+        17,
+        120,
+        73,
+        183,
+        234
+      ],
+      "name": "ContractPausedToggled"
+    },
+    {
+      "discriminator": [
+        158,
+        28,
+        178,
+        247,
+        170,
+        56,
+        59,
+        73
+      ],
+      "name": "MaxTransactionAmountUpdated"
+    },
+    {
+      "discriminator": [
+        182,
+        240,
+        31,
+        34,
+        17,
+        106,
+        29,
+        133
+      ],
+      "name": "MerchantBackingSwept"
+    },
+    {
+      "discriminator": [
+        177,
+        114,
+        82,
+        110,
+        36,
+        237,
+        19,
+        122
+      ],
+      "name": "MerchantPaymentProcessed"
+    },
+    {
+      "discriminator": [
+        120,
+        203,
+        162,
+        145,
+        180,
+        57,
+        253,
+        23
+      ],
+      "name": "OwnershipTransferCancelled"
+    },
+    {
+      "discriminator": [
+        181,
+        32,
+        40,
+        60,
+        60,
+        64,
+        235,
+        29
+      ],
+      "name": "OwnershipTransferInitiated"
+    },
+    {
+      "discriminator": [
+        172,
+        61,
+        205,
+        183,
+        250,
+        50,
+        38,
+        98
+      ],
+      "name": "OwnershipTransferred"
+    },
+    {
+      "discriminator": [
+        167,
+        226,
+        220,
+        221,
+        117,
+        155,
+        29,
+        92
+      ],
+      "name": "PendingDelayCancelled"
+    },
+    {
+      "discriminator": [
+        222,
+        236,
+        172,
+        168,
+        27,
+        96,
+        180,
+        164
+      ],
+      "name": "PendingDelayQueued"
+    },
+    {
+      "discriminator": [
+        98,
+        115,
+        152,
+        69,
+        11,
+        141,
+        205,
+        230
+      ],
+      "name": "PendingSweepCapCancelled"
+    },
+    {
+      "discriminator": [
+        174,
+        151,
+        201,
+        72,
+        142,
+        18,
+        85,
+        212
+      ],
+      "name": "PendingSweepCapQueued"
+    },
+    {
+      "discriminator": [
+        11,
+        134,
+        55,
+        195,
+        74,
+        64,
+        122,
+        35
+      ],
+      "name": "PlatformFeesSwept"
+    },
+    {
+      "discriminator": [
+        129,
+        49,
+        90,
+        82,
+        123,
+        73,
+        105,
+        63
+      ],
+      "name": "PointDepositCreated"
+    },
+    {
+      "discriminator": [
+        235,
+        30,
+        145,
+        78,
+        56,
+        1,
+        240,
+        250
+      ],
+      "name": "PointDepositsPausedToggled"
+    },
+    {
+      "discriminator": [
+        126,
+        189,
+        162,
+        80,
+        0,
+        130,
+        113,
+        187
+      ],
+      "name": "SweepCapUpdated"
+    },
+    {
+      "discriminator": [
+        55,
+        194,
+        205,
+        6,
+        76,
+        142,
+        153,
+        217
+      ],
+      "name": "TransactionCreated"
+    },
+    {
+      "discriminator": [
+        22,
+        9,
+        133,
+        26,
+        160,
+        44,
+        71,
+        192
+      ],
+      "name": "WithdrawEvent"
+    },
+    {
+      "discriminator": [
+        119,
+        175,
+        207,
+        80,
+        186,
+        237,
+        229,
+        9
+      ],
+      "name": "WithdrawalCancelled"
+    },
+    {
+      "discriminator": [
+        255,
+        161,
+        164,
+        83,
+        36,
+        246,
+        65,
+        108
+      ],
+      "name": "WithdrawalDelayUpdated"
+    },
+    {
+      "discriminator": [
+        37,
+        78,
+        199,
+        192,
+        51,
+        68,
+        173,
+        162
+      ],
+      "name": "WithdrawalExecuted"
+    },
+    {
+      "discriminator": [
+        116,
+        223,
+        187,
+        38,
+        197,
+        80,
+        19,
+        250
+      ],
+      "name": "WithdrawalQueued"
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NotOwner",
+      "msg": "Not the contract owner"
+    },
+    {
+      "code": 6001,
+      "name": "NotAdminOrOwner",
+      "msg": "Not an admin or owner"
+    },
+    {
+      "code": 6002,
+      "name": "ContractPaused",
+      "msg": "Contract is paused"
+    },
+    {
+      "code": 6003,
+      "name": "PointDepositsPaused",
+      "msg": "Point deposits are paused"
+    },
+    {
+      "code": 6004,
+      "name": "ZeroAddress",
+      "msg": "Zero address not allowed"
+    },
+    {
+      "code": 6005,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6006,
+      "name": "AlreadyOwner",
+      "msg": "Already the owner"
+    },
+    {
+      "code": 6007,
+      "name": "NotPendingOwner",
+      "msg": "Not the pending owner"
+    },
+    {
+      "code": 6008,
+      "name": "NoPendingTransfer",
+      "msg": "No pending ownership transfer"
+    },
+    {
+      "code": 6009,
+      "name": "QuoteExpired",
+      "msg": "Quote has expired"
+    },
+    {
+      "code": 6010,
+      "name": "RefConsumed",
+      "msg": "Reference ID already consumed"
+    },
+    {
+      "code": 6011,
+      "name": "BadQuote",
+      "msg": "Invalid quote signature"
+    },
+    {
+      "code": 6012,
+      "name": "FeeExceedsAmount",
+      "msg": "Platform fee exceeds payment amount"
+    },
+    {
+      "code": 6013,
+      "name": "FeeAmountInvalid",
+      "msg": "Fee amount invalid"
+    },
+    {
+      "code": 6014,
+      "name": "ZeroSigner",
+      "msg": "Backend signer cannot be zero"
+    },
+    {
+      "code": 6015,
+      "name": "ZeroRecipient",
+      "msg": "Recipient cannot be zero"
+    },
+    {
+      "code": 6016,
+      "name": "AmountExceedsLimit",
+      "msg": "Amount exceeds spending limit"
+    },
+    {
+      "code": 6017,
+      "name": "TimelockActive",
+      "msg": "Timelock is active, use queue/execute"
+    },
+    {
+      "code": 6018,
+      "name": "InsufficientBalance",
+      "msg": "Insufficient balance"
+    },
+    {
+      "code": 6019,
+      "name": "DelayExceedsMax",
+      "msg": "Withdrawal delay exceeds maximum"
+    },
+    {
+      "code": 6020,
+      "name": "NoDelaySet",
+      "msg": "Withdrawal delay must be set before queuing"
+    },
+    {
+      "code": 6021,
+      "name": "TimelockNotExpired",
+      "msg": "Withdrawal timelock not yet expired"
+    },
+    {
+      "code": 6022,
+      "name": "AlreadyExecuted",
+      "msg": "Withdrawal already executed"
+    },
+    {
+      "code": 6023,
+      "name": "AlreadyCancelled",
+      "msg": "Withdrawal already cancelled"
+    },
+    {
+      "code": 6024,
+      "name": "TokenNotAllowed",
+      "msg": "Token not allowed for point deposits"
+    },
+    {
+      "code": 6025,
+      "name": "InvalidStringLength",
+      "msg": "Invalid string length"
+    },
+    {
+      "code": 6026,
+      "name": "InvalidRefIdHash",
+      "msg": "Ref ID hash mismatch"
+    },
+    {
+      "code": 6027,
+      "name": "MissingEd25519Instruction",
+      "msg": "Missing Ed25519 signature instruction"
+    },
+    {
+      "code": 6028,
+      "name": "InvalidEd25519Instruction",
+      "msg": "Invalid Ed25519 instruction data"
+    },
+    {
+      "code": 6029,
+      "name": "WithdrawalTypeMismatch",
+      "msg": "Withdrawal type mismatch"
+    },
+    {
+      "code": 6030,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6031,
+      "name": "SweepCapNotSet",
+      "msg": "Sweep cap not set for this token — sweeps fail closed until configured"
+    },
+    {
+      "code": 6032,
+      "name": "SweepCapExceeded",
+      "msg": "Sweep would exceed the per-window cap"
+    },
+    {
+      "code": 6033,
+      "name": "NotALoosening",
+      "msg": "Not a tightening — loosening a control must be queued"
+    },
+    {
+      "code": 6034,
+      "name": "NoPendingChange",
+      "msg": "No pending change queued"
+    },
+    {
+      "code": 6035,
+      "name": "PendingChangeLocked",
+      "msg": "Pending change is still timelocked"
+    }
+  ],
+  "types": [
+    {
+      "name": "Admin",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AdminAdded",
+      "type": {
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "AdminRemoved",
+      "type": {
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "AllowedPaymentToken",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AllowedPaymentTokenAdded",
+      "type": {
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "AllowedPaymentTokenRemoved",
+      "type": {
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "BackendSignerRotated",
+      "type": {
+        "fields": [
+          {
+            "name": "previous",
+            "type": "pubkey"
+          },
+          {
+            "name": "next",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_owner",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "backend_signer",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "point_deposits_paused",
+            "type": "bool"
+          },
+          {
+            "name": "tx_counter",
+            "type": "u64"
+          },
+          {
+            "name": "point_deposit_counter",
+            "type": "u64"
+          },
+          {
+            "name": "withdrawal_delay",
+            "type": "i64"
+          },
+          {
+            "name": "withdrawal_nonce",
+            "type": "u64"
+          },
+          {
+            "name": "pending_withdrawal_delay",
+            "docs": [
+              "Queued reduction of `withdrawal_delay`. Lowering the delay weakens the",
+              "timelock, so it is subject to the delay currently in force — otherwise a",
+              "leaked owner key would just set it to 0 and withdraw in one transaction.",
+              "`pending_delay_unlock_time == 0` means nothing is queued."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "pending_delay_unlock_time",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ContractPausedToggled",
+      "type": {
+        "fields": [
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "CreateTransactionParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "booking_id",
+            "type": "string"
+          },
+          {
+            "name": "exchange_rate_id",
+            "type": "u64"
+          },
+          {
+            "name": "product_variant_id",
+            "type": "string"
+          },
+          {
+            "name": "ref_id",
+            "type": "string"
+          },
+          {
+            "name": "ref_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MaxTransactionAmountUpdated",
+      "type": {
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MerchantBackingSwept",
+      "type": {
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MerchantPayment",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "merchant_id",
+            "type": "string"
+          },
+          {
+            "name": "ref_id",
+            "type": "string"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "platform_fee_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fiat_amount_minor",
+            "type": "u64"
+          },
+          {
+            "name": "fiat_currency",
+            "type": {
+              "array": [
+                "u8",
+                3
+              ]
+            }
+          },
+          {
+            "name": "exchange_rate_id",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MerchantPaymentProcessed",
+      "type": {
+        "fields": [
+          {
+            "name": "ref_id",
+            "type": "string"
+          },
+          {
+            "name": "merchant_id",
+            "type": "string"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "platform_fee_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fiat_amount_minor",
+            "type": "u64"
+          },
+          {
+            "name": "exchange_rate_id",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MerchantQuoteParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ref_id",
+            "type": "string"
+          },
+          {
+            "name": "ref_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "merchant_id",
+            "type": "string"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "platform_fee_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fiat_amount_minor",
+            "type": "u64"
+          },
+          {
+            "name": "fiat_currency",
+            "type": {
+              "array": [
+                "u8",
+                3
+              ]
+            }
+          },
+          {
+            "name": "exchange_rate_id",
+            "type": "u64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OwnershipTransferCancelled",
+      "type": {
+        "fields": [
+          {
+            "name": "cancelled_pending_owner",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "OwnershipTransferInitiated",
+      "type": {
+        "fields": [
+          {
+            "name": "current_owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_owner",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "OwnershipTransferred",
+      "type": {
+        "fields": [
+          {
+            "name": "previous_owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_owner",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PendingDelayCancelled",
+      "type": {
+        "fields": [
+          {
+            "name": "delay",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PendingDelayQueued",
+      "type": {
+        "fields": [
+          {
+            "name": "delay",
+            "type": "i64"
+          },
+          {
+            "name": "unlock_time",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PendingSweepCapCancelled",
+      "type": {
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PendingSweepCapQueued",
+      "type": {
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "cap",
+            "type": "u64"
+          },
+          {
+            "name": "unlock_time",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PlatformFeeAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "accrued_amount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlatformFeesSwept",
+      "type": {
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PointDepositCreated",
+      "type": {
+        "fields": [
+          {
+            "name": "deposit_id",
+            "type": "u64"
+          },
+          {
+            "name": "wallet_address",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "ref_id",
+            "type": "string"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PointDepositRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "deposit_id",
+            "type": "u64"
+          },
+          {
+            "name": "wallet_address",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "ref_id",
+            "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PointDepositsPausedToggled",
+      "type": {
+        "fields": [
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "RefRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "record_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpendingLimit",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_amount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SweepCap",
+      "docs": [
+        "Per-token treasury sweep rate limit, plus the queued increase for it.",
+        "",
+        "`cap == 0` (the default, and the state of a token that was never configured)",
+        "blocks sweeps entirely. Unlike `SpendingLimit`, where 0 means \"unbounded\",",
+        "this is a security control, so an unconfigured value must fail closed."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "cap",
+            "type": "u64"
+          },
+          {
+            "name": "swept_in_window",
+            "type": "u64"
+          },
+          {
+            "name": "window_start",
+            "type": "i64"
+          },
+          {
+            "name": "pending_cap",
+            "docs": [
+              "Queued increase. Raising a cap weakens a control, so it is subject to the",
+              "withdrawal delay currently in force. 0 unlock_time == nothing pending."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "pending_unlock_time",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SweepCapUpdated",
+      "type": {
+        "fields": [
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "cap",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TransactionCreated",
+      "type": {
+        "fields": [
+          {
+            "name": "tx_id",
+            "type": "u64"
+          },
+          {
+            "name": "wallet_address",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "booking_id",
+            "type": "string"
+          },
+          {
+            "name": "exchange_rate_id",
+            "type": "u64"
+          },
+          {
+            "name": "product_variant_id",
+            "type": "string"
+          },
+          {
+            "name": "ref_id",
+            "type": "string"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TransactionRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "tx_id",
+            "type": "u64"
+          },
+          {
+            "name": "wallet_address",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "booking_id",
+            "type": "string"
+          },
+          {
+            "name": "exchange_rate_id",
+            "type": "u64"
+          },
+          {
+            "name": "product_variant_id",
+            "type": "string"
+          },
+          {
+            "name": "ref_id",
+            "type": "string"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawEvent",
+      "type": {
+        "fields": [
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "WithdrawalCancelled",
+      "type": {
+        "fields": [
+          {
+            "name": "withdrawal_id",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "WithdrawalDelayUpdated",
+      "type": {
+        "fields": [
+          {
+            "name": "delay",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "WithdrawalExecuted",
+      "type": {
+        "fields": [
+          {
+            "name": "withdrawal_id",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "WithdrawalQueued",
+      "type": {
+        "fields": [
+          {
+            "name": "withdrawal_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "unlock_time",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "WithdrawalRequest",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "unlock_time",
+            "type": "i64"
+          },
+          {
+            "name": "executed",
+            "type": "bool"
+          },
+          {
+            "name": "cancelled",
+            "type": "bool"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "is_native",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}
