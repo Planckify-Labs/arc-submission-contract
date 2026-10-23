@@ -32,7 +32,7 @@ contract TakumiPayMerchantTest is Test {
 
         // Deploy behind proxy — owner and backend signer are set in one initialize
         TakumiPay impl = new TakumiPay();
-        bytes memory initData = abi.encodeCall(TakumiPay.initialize, (owner, signer));
+        bytes memory initData = abi.encodeCall(TakumiPay.initialize, (owner, signer, address(0)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
 
         wallet = TakumiPay(payable(address(proxy)));
@@ -562,7 +562,7 @@ contract TakumiPayMerchantTest is Test {
     // ====== version ======
 
     function test_version() public view {
-        assertEq(wallet.version(), "2.1.0");
+        assertEq(wallet.version(), "2.2.0");
     }
 
     // ====== Booking and merchant flows coexist ======
@@ -589,12 +589,49 @@ contract TakumiPayMerchantTest is Test {
         assertEq(wallet.owner(), owner);
     }
 
+    // ====== refId idempotency across flows ======
+
+    /// A refId consumed by a merchant payment cannot be reused by the unsigned flows.
+    function test_revert_bookingAndDeposit_reuseMerchantRefId() public {
+        TakumiPay.QuoteCommitment memory quote = _defaultQuote();
+        bytes memory sig = _signQuote(quote);
+        vm.prank(payer);
+        wallet.processMerchantPayment(quote, sig);
+
+        vm.startPrank(payer);
+        vm.expectRevert(TakumiPay.RefConsumed.selector);
+        wallet.createTransaction("booking-001", 1, "variant-001", address(usdc), quote.refId, 1e6);
+
+        vm.expectRevert(TakumiPay.RefConsumed.selector);
+        wallet.depositPoints(address(usdc), quote.refId, 1e6);
+        vm.stopPrank();
+    }
+
+    /// The reverse is deliberately not checked: otherwise anyone watching a pending
+    /// merchant payment could front-run it with a booking under the quote's refId and
+    /// make the signed quote permanently unpayable.
+    function test_merchantPayment_cannotBeBlockedByBookingFrontRun() public {
+        TakumiPay.QuoteCommitment memory quote = _defaultQuote();
+        address attacker = makeAddr("attacker");
+        usdc.mint(attacker, 1e6);
+
+        vm.startPrank(attacker);
+        usdc.approve(address(wallet), 1e6);
+        wallet.createTransaction("b", 1, "v", address(usdc), quote.refId, 1e6);
+        vm.stopPrank();
+
+        bytes memory sig = _signQuote(quote);
+        vm.prank(payer);
+        wallet.processMerchantPayment(quote, sig);
+        assertEq(wallet.getMerchantPaymentByRef(quote.refId).payer, payer);
+    }
+
     // ====== initialize cannot be called twice ======
 
     function test_revert_initialize_cannotReinitialize() public {
         vm.prank(owner);
         vm.expectRevert();
-        wallet.initialize(owner, makeAddr("anotherSigner"));
+        wallet.initialize(owner, makeAddr("anotherSigner"), address(0));
     }
 
     // ====== Sweep platform fees with native token ======

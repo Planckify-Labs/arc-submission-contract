@@ -36,6 +36,9 @@ script/DeployMockAUSD.s.sol
 test/TakumiPayProduction.t.sol    pause, spending limits, batching, allowlist, withdrawals, upgrades
 test/TakumiPayMerchant.t.sol      processMerchantPayment, quote validation, treasury sweeps, signer rotation
 test/TakumiPayPointDeposit.t.sol  depositPoints and the payment-token allowlist
+test/TakumiPayNativeAlias.t.sol   native-alias chains (Arc) and sweep-cap coverage of every exit
+test/TakumiPayHardening.t.sol     fixes from the 2.1.0 security review (docs/security-review-2.1.0.md)
+test/TakumiPayArcUpgrade.fork.t.sol  2.1.0 → 2.2.0 upgrade rehearsal on an Arc mainnet fork
 deployments/<chainId>.json        deployment record, written by the deploy script
 ```
 
@@ -82,12 +85,16 @@ the timelock would be decorative — an owner key that leaked could call
 | Lower `withdrawalDelay` | `queueWithdrawalDelay` → wait → `applyWithdrawalDelay` |
 | Lower `sweepCap` | `setSweepCap` — immediate |
 | Raise `sweepCap` | `queueSweepCap` → wait → `applySweepCap` |
+| Upgrade the implementation (2.2.0+) | `queueUpgrade` → wait → `upgradeToAndCall` |
+
+`setSweepCap(token, 0)` is the emergency brake, not "no limit": 0 freezes every exit
+for that token until a queued raise lands. For no limit, queue `SWEEP_CAP_UNLIMITED`.
 
 > **Known limit.** With a single-EOA owner these controls bound the blast radius
-> of a leaked key; they do not eliminate it. `upgradeToAndCall` is still owner-only
-> and instant, so an attacker holding the owner key can upgrade to a malicious
-> implementation and bypass everything. Closing that needs either a timelocked
-> upgrade path or a multisig owner.
+> of a leaked key and make every loosening, upgrades included, visible on-chain for
+> `withdrawalDelay` before it lands. They do not eliminate it: the same key that
+> queues can also cancel, so the delay buys detection time, not a veto. A veto needs
+> a multisig owner.
 
 ## Build
 
@@ -113,14 +120,32 @@ forge script script/DeployTakumiPay.s.sol:DeployTakumiPay \
   --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast --verify
 ```
 
-`initialize(owner, backendSigner)` runs atomically with the proxy deployment, so there
-is no window in which an uninitialized proxy is live.
+`initialize(owner, backendSigner, nativeAliasToken)` runs atomically with the proxy
+deployment, so there is no window in which an uninitialized proxy is live. On Arc the
+script passes the USDC ERC-20 (`0x3600…0000`) as `nativeAliasToken` automatically, and
+the contract refuses to initialize on Arc without one. Set `NATIVE_ALIAS_TOKEN` to
+override.
 
 ## Upgrade
+
+From 2.2.0, upgrades are timelocked by `withdrawalDelay`. `UpgradeTakumiPay` deploys the
+new implementation and queues it; it also applies it in the same run when nothing has
+to wait (the proxy is on 2.1.0, which predates the timelock, or `withdrawalDelay` is 0).
 
 ```sh
 PROXY_ADDRESS=0x... forge script script/DeployTakumiPay.s.sol:UpgradeTakumiPay \
   --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast --verify
+
+# after the delay
+PROXY_ADDRESS=0x... NEW_IMPLEMENTATION=0x... \
+  forge script script/DeployTakumiPay.s.sol:ApplyUpgradeTakumiPay \
+  --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
+```
+
+Rehearse an Arc mainnet upgrade on a fork first (nothing is broadcast):
+
+```sh
+RUN_FORK_TESTS=true forge test --match-contract ArcUpgradeFork -vv
 ```
 
 Storage layout must never be reordered — append only, and decrement `__gap` when adding

@@ -105,7 +105,7 @@ contract TakumiPayNativeAliasTest is Test {
         TakumiPay implementation = new TakumiPay();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(implementation),
-            abi.encodeCall(TakumiPay.initialize, (owner, makeAddr("backendSigner")))
+            abi.encodeCall(TakumiPay.initialize, (owner, makeAddr("backendSigner"), address(0)))
         );
         wallet = TakumiPay(payable(address(proxy)));
 
@@ -119,7 +119,6 @@ contract TakumiPayNativeAliasTest is Test {
 
         _setSweepCap(address(usdc), type(uint256).max);
         _setSweepCap(address(usdt), type(uint256).max);
-        _setSweepCap(address(0), type(uint256).max);
     }
 
     function _setSweepCap(address token, uint256 cap) internal {
@@ -282,6 +281,7 @@ contract TakumiPayNativeAliasTest is Test {
     }
 
     function test_nativeWithdraw_stillWorks_whenNoAlias() public {
+        _setSweepCap(address(0), type(uint256).max);
         vm.deal(address(wallet), 5 ether);
 
         uint256 before = recipient.balance;
@@ -291,6 +291,7 @@ contract TakumiPayNativeAliasTest is Test {
     }
 
     function test_nativeSweep_stillWorks_whenNoAlias() public {
+        _setSweepCap(address(0), type(uint256).max);
         vm.deal(address(wallet), 5 ether);
 
         uint256 before = recipient.balance;

@@ -33,7 +33,7 @@ contract TakumiPayPointDepositTest is Test {
         TakumiPay implementation = new TakumiPay();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(implementation),
-            abi.encodeCall(TakumiPay.initialize, (owner, makeAddr("backendSigner")))
+            abi.encodeCall(TakumiPay.initialize, (owner, makeAddr("backendSigner"), address(0)))
         );
         wallet = TakumiPay(payable(address(proxy)));
 
@@ -141,7 +141,7 @@ contract TakumiPayPointDepositTest is Test {
         usdc.approve(address(wallet), 200e6);
         wallet.depositPoints(address(usdc), refId, 100e6);
 
-        vm.expectRevert("refId already used");
+        vm.expectRevert(TakumiPay.RefConsumed.selector);
         wallet.depositPoints(address(usdc), refId, 100e6);
         vm.stopPrank();
     }
@@ -149,7 +149,7 @@ contract TakumiPayPointDepositTest is Test {
     function test_DepositPoints_RevertIf_ZeroAmount() public {
         vm.startPrank(user1);
         usdc.approve(address(wallet), 100e6);
-        vm.expectRevert("Amount must be greater than 0");
+        vm.expectRevert(TakumiPay.ZeroAmount.selector);
         wallet.depositPoints(address(usdc), "pt_zero", 0);
         vm.stopPrank();
     }
@@ -188,7 +188,7 @@ contract TakumiPayPointDepositTest is Test {
     }
 
     function test_GetPointDepositByRef_RevertIf_NotFound() public {
-        vm.expectRevert("Point deposit not found");
+        vm.expectRevert(TakumiPay.PointDepositNotFound.selector);
         wallet.getPointDepositByRef("pt_nonexistent");
     }
 
@@ -274,7 +274,7 @@ contract TakumiPayPointDepositTest is Test {
     }
 
     function test_AddAllowedPaymentToken_RevertIf_AlreadyAllowed() public {
-        vm.expectRevert("Token already allowed");
+        vm.expectRevert(TakumiPay.TokenAlreadyAllowed.selector);
         wallet.addAllowedPaymentToken(address(usdc));
     }
 
@@ -359,19 +359,39 @@ contract TakumiPayPointDepositTest is Test {
         assertEq(txData.bookingId, "booking2");
     }
 
-    function test_BookingAndPointRefIds_DontCollide() public {
+    /// A refId is one idempotency key across flows — the API claims it in a single
+    /// ReferenceId table and credits only the first use, so the contract must refuse a
+    /// second on-chain payment under the same key rather than take money twice.
+    function test_RevertIf_PointDepositReusesBookingRefId() public {
         string memory sharedRef = "shared_ref_1";
 
-        // Use sharedRef for a booking transaction
         vm.startPrank(user1);
         usdc.approve(address(wallet), 200e6);
         wallet.createTransaction("booking3", 3, "variant3", address(usdc), sharedRef, 100e6);
 
-        // Same refId should work for a point deposit (separate namespace)
+        vm.expectRevert(TakumiPay.RefConsumed.selector);
         wallet.depositPoints(address(usdc), sharedRef, 100e6);
         vm.stopPrank();
 
-        assertEq(wallet.txCounter(), 1);
-        assertEq(wallet.pointDepositCounter(), 1);
+        assertEq(wallet.pointDepositCounter(), 0);
+    }
+
+    function test_RevertIf_BookingReusesPointDepositRefId() public {
+        string memory sharedRef = "pt_shared";
+
+        vm.startPrank(user1);
+        usdc.approve(address(wallet), 200e6);
+        wallet.depositPoints(address(usdc), sharedRef, 100e6);
+
+        vm.expectRevert(TakumiPay.RefConsumed.selector);
+        wallet.createTransaction("booking3", 3, "variant3", address(usdc), sharedRef, 100e6);
+
+        TakumiPay.TransactionParams[] memory params = new TakumiPay.TransactionParams[](1);
+        params[0] = TakumiPay.TransactionParams("booking3", 3, "variant3", address(usdc), sharedRef, 100e6);
+        vm.expectRevert(TakumiPay.RefConsumed.selector);
+        wallet.createTransactionBatch(params);
+        vm.stopPrank();
+
+        assertEq(wallet.txCounter(), 0);
     }
 }

@@ -62,7 +62,7 @@ contract TakumiPayProductionTest is Test {
         TakumiPay implementation = new TakumiPay();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(implementation),
-            abi.encodeCall(TakumiPay.initialize, (owner, makeAddr("backendSigner")))
+            abi.encodeCall(TakumiPay.initialize, (owner, makeAddr("backendSigner"), address(0)))
         );
         wallet = TakumiPay(payable(address(proxy)));
 
@@ -176,7 +176,7 @@ contract TakumiPayProductionTest is Test {
 
         vm.startPrank(user1);
         usdc.approve(address(wallet), 1000e6);
-        vm.expectRevert("Amount exceeds spending limit");
+        vm.expectRevert(TakumiPay.ExceedsSpendingLimit.selector);
         wallet.createTransaction("b1", 1, "v1", address(usdc), "ref1", 600e6);
         vm.stopPrank();
     }
@@ -248,7 +248,7 @@ contract TakumiPayProductionTest is Test {
     function test_BatchTransaction_RevertIf_Empty() public {
         TakumiPay.TransactionParams[] memory params = new TakumiPay.TransactionParams[](0);
         vm.prank(user1);
-        vm.expectRevert("Empty batch");
+        vm.expectRevert(TakumiPay.EmptyBatch.selector);
         wallet.createTransactionBatch(params);
     }
 
@@ -258,7 +258,7 @@ contract TakumiPayProductionTest is Test {
             params[i] = TakumiPay.TransactionParams("b", i, "v", address(usdc), string(abi.encodePacked("ref", i)), 1e6);
         }
         vm.prank(user1);
-        vm.expectRevert("Batch too large");
+        vm.expectRevert(TakumiPay.BatchTooLarge.selector);
         wallet.createTransactionBatch(params);
     }
 
@@ -269,7 +269,7 @@ contract TakumiPayProductionTest is Test {
 
         vm.startPrank(user1);
         usdc.approve(address(wallet), 200e6);
-        vm.expectRevert("Duplicate refId in batch");
+        vm.expectRevert(TakumiPay.DuplicateRefInBatch.selector);
         wallet.createTransactionBatch(params);
         vm.stopPrank();
     }
@@ -282,7 +282,7 @@ contract TakumiPayProductionTest is Test {
         TakumiPay.TransactionParams[] memory params = new TakumiPay.TransactionParams[](1);
         params[0] = TakumiPay.TransactionParams("b2", 2, "v2", address(usdc), "existing_ref", 100e6);
 
-        vm.expectRevert("refId must be unique");
+        vm.expectRevert(TakumiPay.RefConsumed.selector);
         wallet.createTransactionBatch(params);
         vm.stopPrank();
     }
@@ -292,7 +292,7 @@ contract TakumiPayProductionTest is Test {
         params[0] = TakumiPay.TransactionParams("b1", 1, "v1", address(0), "ref1", 1 ether);
 
         vm.prank(user1);
-        vm.expectRevert("Incorrect ETH amount for batch");
+        vm.expectRevert(TakumiPay.NativeAmountMismatch.selector);
         wallet.createTransactionBatch{value: 0.5 ether}(params);
     }
 
@@ -310,7 +310,7 @@ contract TakumiPayProductionTest is Test {
     }
 
     function test_SetWithdrawalDelay_RevertIf_ExceedsMax() public {
-        vm.expectRevert("Delay exceeds maximum");
+        vm.expectRevert(TakumiPay.DelayTooLong.selector);
         wallet.setWithdrawalDelay(8 days);
     }
 
@@ -368,7 +368,7 @@ contract TakumiPayProductionTest is Test {
         wallet.setWithdrawalDelay(1 days);
         bytes32 wId = wallet.queueWithdrawal(address(usdc), owner, 100e6);
 
-        vm.expectRevert("Timelock not expired");
+        vm.expectRevert(TakumiPay.TimelockNotExpired.selector);
         wallet.executeWithdrawal(wId);
     }
 
@@ -383,7 +383,7 @@ contract TakumiPayProductionTest is Test {
         vm.warp(block.timestamp + 1 days);
         wallet.executeWithdrawal(wId);
 
-        vm.expectRevert("Already executed");
+        vm.expectRevert(TakumiPay.WithdrawalAlreadyExecuted.selector);
         wallet.executeWithdrawal(wId);
     }
 
@@ -417,12 +417,12 @@ contract TakumiPayProductionTest is Test {
         wallet.cancelWithdrawal(wId);
 
         vm.warp(block.timestamp + 1 days);
-        vm.expectRevert("Already cancelled");
+        vm.expectRevert(TakumiPay.WithdrawalAlreadyCancelled.selector);
         wallet.executeWithdrawal(wId);
     }
 
     function test_ExecuteWithdrawal_RevertIf_NotFound() public {
-        vm.expectRevert("Withdrawal not found");
+        vm.expectRevert(TakumiPay.WithdrawalNotFound.selector);
         wallet.executeWithdrawal(bytes32(uint256(999)));
     }
 
@@ -700,7 +700,7 @@ contract TakumiPayProductionTest is Test {
     function test_CreateTransaction_RevertIf_EmptyRefId() public {
         vm.startPrank(user1);
         usdc.approve(address(wallet), 100e6);
-        vm.expectRevert("Invalid refId length");
+        vm.expectRevert(TakumiPay.InvalidStringLength.selector);
         wallet.createTransaction("b1", 1, "v1", address(usdc), "", 100e6);
         vm.stopPrank();
     }
@@ -715,7 +715,7 @@ contract TakumiPayProductionTest is Test {
 
         vm.startPrank(user1);
         usdc.approve(address(wallet), 100e6);
-        vm.expectRevert("Invalid refId length");
+        vm.expectRevert(TakumiPay.InvalidStringLength.selector);
         wallet.createTransaction("b1", 1, "v1", address(usdc), string(longRefIdBytes), 100e6);
         vm.stopPrank();
     }
@@ -723,7 +723,7 @@ contract TakumiPayProductionTest is Test {
     function test_CreateTransaction_RevertIf_EmptyBookingId() public {
         vm.startPrank(user1);
         usdc.approve(address(wallet), 100e6);
-        vm.expectRevert("Invalid bookingId length");
+        vm.expectRevert(TakumiPay.InvalidStringLength.selector);
         wallet.createTransaction("", 1, "v1", address(usdc), "ref1", 100e6);
         vm.stopPrank();
     }
@@ -732,23 +732,23 @@ contract TakumiPayProductionTest is Test {
 
     function test_GetUserTransactions_RevertIf_LimitTooLarge() public {
         vm.prank(user1);
-        vm.expectRevert("Limit too large");
+        vm.expectRevert(TakumiPay.LimitTooLarge.selector);
         wallet.getUserTransactions(0, 501);
     }
 
     function test_GetUserPointDeposits_RevertIf_LimitTooLarge() public {
         vm.prank(user1);
-        vm.expectRevert("Limit too large");
+        vm.expectRevert(TakumiPay.LimitTooLarge.selector);
         wallet.getUserPointDeposits(0, 501);
     }
 
     function test_GetTransactionsInRange_RevertIf_LimitTooLarge() public {
-        vm.expectRevert("Limit too large");
+        vm.expectRevert(TakumiPay.LimitTooLarge.selector);
         wallet.getTransactionsInRange(0, block.timestamp, 0, 501);
     }
 
     function test_GetTransactionsInRange_RevertIf_InvalidRange() public {
-        vm.expectRevert("Invalid range");
+        vm.expectRevert(TakumiPay.InvalidRange.selector);
         wallet.getTransactionsInRange(block.timestamp + 1, block.timestamp, 0, 10);
     }
 
@@ -762,7 +762,7 @@ contract TakumiPayProductionTest is Test {
     // ====== Upgradeability ======
 
     function test_Version_Returns_Current() public view {
-        assertEq(wallet.version(), "2.1.0");
+        assertEq(wallet.version(), "2.2.0");
     }
 
     function test_UpgradeToAndCall_RevertIf_NotOwner() public {
@@ -774,6 +774,7 @@ contract TakumiPayProductionTest is Test {
 
     function test_UpgradeToAndCall_Owner_Succeeds() public {
         TakumiPay newImpl = new TakumiPay();
+        wallet.queueUpgrade(address(newImpl));
         wallet.upgradeToAndCall(address(newImpl), "");
         // State is preserved after upgrade
         assertEq(wallet.owner(), owner);

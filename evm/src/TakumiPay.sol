@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 /// @title TakumiPay
 /// @notice Payment contract supporting ERC20 + native token transactions, merchant
@@ -20,6 +21,11 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///      ReentrancyGuardUpgradeable, EIP712Upgradeable) uses ERC-7201 namespaced
 ///      storage, so none of them consume sequential slots — this contract's state
 ///      starts at slot 0.
+///
+///      Time-based checks (quote expiry, the sweep window, every timelock) read
+///      block.timestamp. Proposers can skew it by seconds — less on sequencer-ordered
+///      chains like Arc and Arbitrum — which is immaterial against minute-scale quote
+///      expiries and day-scale windows and delays.
 contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable, EIP712Upgradeable {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -89,6 +95,9 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     mapping(uint256 => Transaction) public transactions;
     mapping(address => uint256[]) private userTransactions;
+    /// @dev A refId is an idempotency key for one operation, whichever flow it is used
+    ///      in — the API claims it in a single unique ReferenceId table for bookings and
+    ///      point deposits alike, and credits only the first. See _isRefIdUsed.
     mapping(string => uint256) private refToTx;
 
     // ====== Point Deposits ======
@@ -161,9 +170,10 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     /// @dev Sentinel meaning "no cap". Set explicitly — it is not the default.
     uint256 public constant SWEEP_CAP_UNLIMITED = type(uint256).max;
 
-    /// @dev token => max sweepable per window. 0 (the default) blocks sweeps
-    ///      entirely. Unlike `maxTransactionAmount`, where 0 means "no limit",
-    ///      this is a security control, so an unconfigured value must fail closed.
+    /// @dev token => max sweepable per window, in the token's own decimals (6 for a
+    ///      USDC-style ERC-20, 18 for native). 0 (the default) blocks sweeps entirely.
+    ///      Unlike `maxTransactionAmount`, where 0 means "no limit", this is a security
+    ///      control, so an unconfigured value must fail closed.
     mapping(address => uint256) public sweepCap;
     mapping(address => uint256) public sweptInWindow;
     mapping(address => uint256) public sweepWindowStart;
@@ -197,9 +207,17 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     //
     // Left at address(0) — the default, and the case on every other chain — nothing
     // changes and native payments behave exactly as before.
+    //
+    // New deployments set it in `initialize`, so there is never a window where both
+    // views are live. On Arc the initializer refuses to run without it.
 
     /// @dev address(0) means "native is its own asset" (normal EVM chains).
     address public nativeAliasToken;
+
+    uint256 private constant ARC_MAINNET_CHAIN_ID = 5042;
+    uint256 private constant ARC_TESTNET_CHAIN_ID = 5042002;
+    /// @dev Decimals of the native coin. Arc's native USDC is 18, like every EVM chain.
+    uint8 private constant NATIVE_DECIMALS = 18;
 
     // ====== Storage Gap ======
     // Reserve slots for future upgrades. Decrement when adding new state variables.
@@ -262,6 +280,8 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     event OwnershipTransferCancelled(address indexed cancelledPendingOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event NativeAliasTokenSet(address indexed token);
+    event NativeDustRescued(address indexed to, uint256 amount);
+    event UpgradeQueued(address indexed implementation, uint256 unlockTime);
 
     /// @notice Emitted on every successful merchant payment.
     /// @dev `refIdHash` / `merchantIdHash` are indexed, so Solidity stores only the
@@ -317,6 +337,29 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     error NativeAliasAlreadySet();
     error NativeAliasNotAllowlistable();
     error NativeDisabledOnAliasChain();
+    error NativeAliasRequired();
+    error NativeFeesOutstanding();
+    error NativeSweepCapSet();
+    error NativeNotAliased();
+    error UpgradeNotQueued();
+    error EmptyBatch();
+    error BatchTooLarge();
+    error DuplicateRefInBatch();
+    error ExceedsSpendingLimit();
+    error DelayTooLong();
+    error WithdrawalDelayNotSet();
+    error WithdrawalNotFound();
+    error WithdrawalAlreadyExecuted();
+    error WithdrawalAlreadyCancelled();
+    error AlreadyAdmin();
+    error NotAdmin();
+    error IndexInconsistency();
+    error LimitTooLarge();
+    error InvalidRange();
+    error TransactionNotFound();
+    error PointDepositNotFound();
+    error TokenAlreadyAllowed();
+    error FeeOnTransferNotSupported();
 
     // ====== Modifiers ======
 
@@ -350,7 +393,12 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     /// @notice Initializes the proxy. Must be called exactly once after deployment.
     /// @param initialOwner Address that will own the contract.
     /// @param initialBackendSigner Address of the backend signer that produces EIP-712 quote signatures.
-    function initialize(address initialOwner, address initialBackendSigner) external initializer {
+    /// @param initialNativeAliasToken The ERC-20 that native is an alias of on this chain
+    ///        (see nativeAliasToken), or address(0) on a normal EVM chain. Required on Arc.
+    function initialize(address initialOwner, address initialBackendSigner, address initialNativeAliasToken)
+        external
+        initializer
+    {
         if (initialOwner == address(0)) revert ZeroAddress();
         if (initialBackendSigner == address(0)) revert ZeroSigner();
         __ReentrancyGuard_init();
@@ -358,16 +406,41 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         __EIP712_init("TakumiPay", "1");
         owner = initialOwner;
         backendSigner = initialBackendSigner;
+
+        if (initialNativeAliasToken != address(0)) {
+            nativeAliasToken = initialNativeAliasToken;
+            emit NativeAliasTokenSet(initialNativeAliasToken);
+        } else if (block.chainid == ARC_MAINNET_CHAIN_ID || block.chainid == ARC_TESTNET_CHAIN_ID) {
+            revert NativeAliasRequired();
+        }
     }
 
     // ====== UUPS Upgrade Authorization ======
 
-    /// @dev Only the owner may authorize an implementation upgrade.
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    bytes32 private constant UPGRADE_KEY = keccak256("upgrade");
+
+    /// @notice Queues `newImplementation` for upgradeToAndCall, unlockable after the
+    ///         withdrawal delay currently in force.
+    /// @dev An upgrade can rewrite every other control, so it is the strongest
+    ///      loosening there is and goes through the same pending-change queue as the
+    ///      rest. Queuing again replaces the pending implementation;
+    ///      cancelPendingChange(keccak256("upgrade")) withdraws it.
+    function queueUpgrade(address newImplementation) external onlyOwner {
+        if (newImplementation == address(0)) revert ZeroAddress();
+        _queueLoosening(UPGRADE_KEY, uint256(uint160(newImplementation)));
+        emit UpgradeQueued(newImplementation, block.timestamp + withdrawalDelay);
+    }
+
+    /// @dev Owner-only, and only for the implementation that was queued and has
+    ///      waited out its delay. Consuming the entry makes each queue single-use.
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+        if (_pendingChanges[UPGRADE_KEY].value != uint256(uint160(newImplementation))) revert UpgradeNotQueued();
+        _consumePending(UPGRADE_KEY);
+    }
 
     /// @notice Returns the current implementation version string.
     function version() external pure returns (string memory) {
-        return "2.1.0";
+        return "2.2.0";
     }
 
     /// @notice Returns the EIP-712 domain separator used for quote verification.
@@ -426,9 +499,9 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         _validateStrings(bookingId, productVariantId, refId);
         if (!allowedPaymentTokens[tokenAddress]) revert TokenNotAllowed();
         if (tokenAddress == address(0)) {
-            require(msg.value == amount, "Incorrect amount sent");
+            if (msg.value != amount) revert NativeAmountMismatch();
         } else {
-            require(msg.value == 0, "ETH not required for ERC20");
+            if (msg.value != 0) revert UnexpectedNative();
             _pullToken(tokenAddress, msg.sender, amount);
         }
         _recordTransaction(msg.sender, bookingId, exchangeRateId, productVariantId, tokenAddress, refId, amount);
@@ -438,19 +511,19 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     function createTransactionBatch(TransactionParams[] calldata params) external payable whenNotPaused nonReentrant {
         uint256 len = params.length;
-        require(len > 0, "Empty batch");
-        require(len <= 20, "Batch too large");
+        if (len == 0) revert EmptyBatch();
+        if (len > 20) revert BatchTooLarge();
 
         // Phase 1: Validate all params and compute expected ETH total
         uint256 totalNative = 0;
         for (uint256 i = 0; i < len; i++) {
-            require(params[i].amount > 0, "Amount must be greater than 0");
+            if (params[i].amount == 0) revert ZeroAmount();
             _validateStrings(params[i].bookingId, params[i].productVariantId, params[i].refId);
 
             if (!allowedPaymentTokens[params[i].tokenAddress]) revert TokenNotAllowed();
 
             // Check existing refIds before any transfers
-            require(refToTx[params[i].refId] == 0, "refId must be unique");
+            if (_isRefIdUsed(params[i].refId)) revert RefConsumed();
 
             if (params[i].tokenAddress == address(0)) {
                 totalNative += params[i].amount;
@@ -459,22 +532,23 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
             // Check spending limits upfront
             uint256 maxAmt = maxTransactionAmount[params[i].tokenAddress];
             if (maxAmt > 0) {
-                require(params[i].amount <= maxAmt, "Amount exceeds spending limit");
+                if (params[i].amount > maxAmt) revert ExceedsSpendingLimit();
             }
         }
-        require(msg.value == totalNative, "Incorrect ETH amount for batch");
+        if (msg.value != totalNative) revert NativeAmountMismatch();
 
         // Phase 2: Check intra-batch duplicate refIds (O(n^2), max 20 items = max 190 iterations)
         for (uint256 i = 0; i < len; i++) {
             for (uint256 j = i + 1; j < len; j++) {
-                require(
-                    keccak256(bytes(params[i].refId)) != keccak256(bytes(params[j].refId)),
-                    "Duplicate refId in batch"
-                );
+                if (keccak256(bytes(params[i].refId)) == keccak256(bytes(params[j].refId))) {
+                    revert DuplicateRefInBatch();
+                }
             }
         }
 
-        // Phase 3: Execute all ERC20 transfers
+        // Phase 3: Execute all ERC20 transfers. External calls in a loop are deliberate:
+        // everything was validated above, so any failing pull reverts the whole batch,
+        // and nonReentrant keeps a token callback from re-entering before phase 4.
         for (uint256 i = 0; i < len; i++) {
             if (params[i].tokenAddress != address(0)) {
                 _pullToken(params[i].tokenAddress, msg.sender, params[i].amount);
@@ -497,18 +571,20 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         string calldata refId,
         uint256 amount
     ) internal {
-        require(refToTx[refId] == 0, "refId must be unique");
-        require(amount > 0, "Amount must be greater than 0");
+        if (_isRefIdUsed(refId)) revert RefConsumed();
+        if (amount == 0) revert ZeroAmount();
 
         uint256 maxAmt = maxTransactionAmount[tokenAddress];
         if (maxAmt > 0) {
-            require(amount <= maxAmt, "Amount exceeds spending limit");
+            if (amount > maxAmt) revert ExceedsSpendingLimit();
         }
 
         _recordTransactionUnchecked(sender, bookingId, exchangeRateId, productVariantId, tokenAddress, refId, amount);
     }
 
     // Internal writer — assumes all validation already done (used by batch after pre-validation)
+    // This must stay the only writer of `transactions`, stamping block.timestamp: the
+    // getTransactionsInRange binary search relies on timestamps never decreasing with id.
     function _recordTransactionUnchecked(
         address sender,
         string calldata bookingId,
@@ -705,7 +781,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         if (to == address(0)) revert ZeroAddress();
         if (withdrawalDelay > 0) revert TimelockActive();
         uint256 balance = token == address(0) ? address(this).balance : IERC20(token).balanceOf(address(this));
-        require(balance > 0, "No balance");
+        if (balance == 0) revert ZeroAmount();
         _doWithdraw(token, to, balance);
     }
 
@@ -729,7 +805,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     /// @dev Lowering must go through queueWithdrawalDelay/applyPendingChange so the
     ///      reduction is itself subject to the delay currently in force.
     function setWithdrawalDelay(uint256 delay) external onlyOwner {
-        require(delay <= MAX_WITHDRAWAL_DELAY, "Delay exceeds maximum");
+        if (delay > MAX_WITHDRAWAL_DELAY) revert DelayTooLong();
         if (delay < withdrawalDelay) revert NotALoosening();
         withdrawalDelay = delay;
         emit WithdrawalDelayUpdated(delay);
@@ -757,6 +833,12 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     /// @dev Raising must go through queueSweepCap — otherwise the rate limit would be
     ///      one call away from being defeated, the same way an ungated
     ///      setWithdrawalDelay defeats the timelock.
+    ///
+    ///      WARNING: 0 does not mean "no limit". It is the fail-closed default and
+    ///      FREEZES every exit for `token` — sweeps, withdrawals, recovery — until a
+    ///      queueSweepCap/applySweepCap pair lands, a full `withdrawalDelay` later.
+    ///      That is deliberate: it is the emergency brake, and setNativeAliasToken
+    ///      requires it for native. For "unlimited", queue SWEEP_CAP_UNLIMITED.
     function setSweepCap(address token, uint256 cap) external onlyOwner {
         if (cap > sweepCap[token]) revert NotALoosening();
         sweepCap[token] = cap;
@@ -808,10 +890,10 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         // Reject at queue time rather than letting it sit for `withdrawalDelay` and
         // then fail in executeWithdrawal.
         _rejectAliasedNative(token);
-        require(withdrawalDelay > 0, "Set a withdrawal delay before queuing");
+        if (withdrawalDelay == 0) revert WithdrawalDelayNotSet();
 
         withdrawalNonce += 1;
-        bytes32 withdrawalId = keccak256(abi.encodePacked(token, to, amount, block.timestamp, withdrawalNonce));
+        bytes32 withdrawalId = keccak256(abi.encode(token, to, amount, block.timestamp, withdrawalNonce));
         uint256 unlockTime = block.timestamp + withdrawalDelay;
 
         withdrawalRequests[withdrawalId] = WithdrawalRequest({
@@ -829,10 +911,10 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     function executeWithdrawal(bytes32 withdrawalId) external onlyOwner nonReentrant {
         WithdrawalRequest storage req = withdrawalRequests[withdrawalId];
-        require(req.unlockTime > 0, "Withdrawal not found");
-        require(!req.executed, "Already executed");
-        require(!req.cancelled, "Already cancelled");
-        require(block.timestamp >= req.unlockTime, "Timelock not expired");
+        if (req.unlockTime == 0) revert WithdrawalNotFound();
+        if (req.executed) revert WithdrawalAlreadyExecuted();
+        if (req.cancelled) revert WithdrawalAlreadyCancelled();
+        if (block.timestamp < req.unlockTime) revert TimelockNotExpired();
 
         // Effects before interactions (CEI pattern)
         req.executed = true;
@@ -842,9 +924,9 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     function cancelWithdrawal(bytes32 withdrawalId) external onlyOwner {
         WithdrawalRequest storage req = withdrawalRequests[withdrawalId];
-        require(req.unlockTime > 0, "Withdrawal not found");
-        require(!req.executed, "Already executed");
-        require(!req.cancelled, "Already cancelled");
+        if (req.unlockTime == 0) revert WithdrawalNotFound();
+        if (req.executed) revert WithdrawalAlreadyExecuted();
+        if (req.cancelled) revert WithdrawalAlreadyCancelled();
         req.cancelled = true;
         emit WithdrawalCancelled(withdrawalId);
     }
@@ -880,7 +962,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     function addAdmin(address admin) external onlyOwner {
         if (admin == address(0)) revert ZeroAddress();
-        require(!admins[admin], "Already admin");
+        if (admins[admin]) revert AlreadyAdmin();
         admins[admin] = true;
         adminList.push(admin);
         adminListIndex[admin] = adminList.length; // 1-based index
@@ -888,8 +970,8 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     }
 
     function removeAdmin(address admin) external onlyOwner {
-        require(admins[admin], "Not an admin");
-        require(adminListIndex[admin] > 0, "Admin index inconsistency");
+        if (!admins[admin]) revert NotAdmin();
+        if (adminListIndex[admin] == 0) revert IndexInconsistency();
         admins[admin] = false;
 
         // Swap-and-pop to keep array compact and avoid stale entries
@@ -917,7 +999,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     // ====== Transaction View Functions ======
 
     function getUserTransactions(uint256 offset, uint256 limit) external view returns (Transaction[] memory) {
-        require(limit <= MAX_PAGINATION_LIMIT, "Limit too large");
+        if (limit > MAX_PAGINATION_LIMIT) revert LimitTooLarge();
         return _paginateTx(userTransactions[msg.sender], offset, limit);
     }
 
@@ -926,7 +1008,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         view
         returns (Transaction[] memory)
     {
-        require(limit <= MAX_PAGINATION_LIMIT, "Limit too large");
+        if (limit > MAX_PAGINATION_LIMIT) revert LimitTooLarge();
         return _paginateTx(userTransactions[user], offset, limit);
     }
 
@@ -947,7 +1029,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     function getTransactionByRef(string calldata refId) external view returns (Transaction memory) {
         uint256 txId = refToTx[refId];
-        require(txId != 0, "Transaction not found");
+        if (txId == 0) revert TransactionNotFound();
         return transactions[txId];
     }
 
@@ -955,44 +1037,45 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         return userTransactions[user].length;
     }
 
-    // Warning: this function iterates all transactions and should only be called off-chain.
-    // Enforce a hard cap on `limit` to prevent excessive memory allocation.
+    /// @notice Transactions with `start <= timestamp <= end`, in id order, paginated.
+    /// @dev O(log txCounter + limit). Ids are assigned in append order and stamped
+    ///      with block.timestamp, which never decreases, so `transactions` is sorted
+    ///      by timestamp and the matching ids form one contiguous run, located by
+    ///      binary search.
     function getTransactionsInRange(uint256 start, uint256 end, uint256 offset, uint256 limit)
         external
         view
         returns (Transaction[] memory)
     {
-        require(limit <= MAX_PAGINATION_LIMIT, "Limit too large");
-        require(start <= end, "Invalid range");
+        if (limit > MAX_PAGINATION_LIMIT) revert LimitTooLarge();
+        if (start > end) revert InvalidRange();
 
-        // First pass: count matching transactions to size the temp array
-        uint256 count = 0;
-        for (uint256 i = 1; i <= txCounter; i++) {
-            uint256 ts = transactions[i].timestamp;
-            if (ts >= start && ts <= end) {
-                count++;
-            }
-        }
+        uint256 first = _firstTxAtOrAfter(start);
+        uint256 pastLast = end == type(uint256).max ? txCounter + 1 : _firstTxAtOrAfter(end + 1);
+        uint256 count = pastLast - first;
 
         if (offset >= count) return new Transaction[](0);
         uint256 size = _min(limit, count - offset);
         Transaction[] memory result = new Transaction[](size);
+        for (uint256 i = 0; i < size; i++) {
+            result[i] = transactions[first + offset + i];
+        }
+        return result;
+    }
 
-        // Second pass: fill result with pagination
-        uint256 matched = 0;
-        uint256 filled = 0;
-        for (uint256 i = 1; i <= txCounter && filled < size; i++) {
-            Transaction memory txData = transactions[i];
-            if (txData.timestamp >= start && txData.timestamp <= end) {
-                if (matched >= offset) {
-                    result[filled] = txData;
-                    filled++;
-                }
-                matched++;
+    /// @dev Lowest tx id with timestamp >= `ts`, or txCounter + 1 when there is none.
+    function _firstTxAtOrAfter(uint256 ts) private view returns (uint256) {
+        uint256 lo = 1;
+        uint256 hi = txCounter + 1;
+        while (lo < hi) {
+            uint256 mid = (lo + hi) / 2;
+            if (transactions[mid].timestamp < ts) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
             }
         }
-
-        return result;
+        return lo;
     }
 
     // ====== Point Deposit Functions ======
@@ -1004,8 +1087,8 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         nonReentrant
     {
         if (!allowedPaymentTokens[tokenAddress]) revert TokenNotAllowed();
-        require(pointRefToDeposit[refId] == 0, "refId already used");
-        require(amount > 0, "Amount must be greater than 0");
+        if (_isRefIdUsed(refId)) revert RefConsumed();
+        if (amount == 0) revert ZeroAmount();
         if (!_isValidString(refId)) revert InvalidStringLength();
 
         _pullToken(tokenAddress, msg.sender, amount);
@@ -1033,7 +1116,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         returns (PointDeposit memory)
     {
         uint256 depositId = pointRefToDeposit[refId];
-        require(depositId != 0, "Point deposit not found");
+        if (depositId == 0) revert PointDepositNotFound();
         return pointDeposits[depositId];
     }
 
@@ -1042,12 +1125,12 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         view
         returns (PointDeposit[] memory)
     {
-        require(limit <= MAX_PAGINATION_LIMIT, "Limit too large");
+        if (limit > MAX_PAGINATION_LIMIT) revert LimitTooLarge();
         return _paginateDeposit(userPointDeposits[user], offset, limit);
     }
 
     function getUserPointDeposits(uint256 offset, uint256 limit) external view returns (PointDeposit[] memory) {
-        require(limit <= MAX_PAGINATION_LIMIT, "Limit too large");
+        if (limit > MAX_PAGINATION_LIMIT) revert LimitTooLarge();
         return _paginateDeposit(userPointDeposits[msg.sender], offset, limit);
     }
 
@@ -1081,13 +1164,45 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     ///
     ///      Setting it only ever tightens (it closes a value path), so it takes effect
     ///      immediately rather than going through `withdrawalDelay`.
+    ///
+    ///      Only for proxies initialized without an alias; new deployments pass it to
+    ///      `initialize`. Because it closes every native exit, it refuses to run while
+    ///      native state would be stranded behind it: accrued native fees must be swept
+    ///      first, and the native sweep cap must be back at 0, which also leaves any
+    ///      queued native withdrawal unexecutable — cancel and requeue those in the
+    ///      ERC-20 afterwards. Native balance itself is not stranded: it is the same
+    ///      money as the ERC-20 view, bar sub-unit dust (see rescueNativeDust).
     function setNativeAliasToken(address token) external onlyOwner {
         if (token == address(0)) revert ZeroAddress();
         if (nativeAliasToken != address(0)) revert NativeAliasAlreadySet();
         // Refuse to create a config where one asset is already allowlisted twice.
         if (allowedPaymentTokens[address(0)]) revert NativeAliasNotAllowlistable();
+        if (platformFeeAccrued[address(0)] != 0) revert NativeFeesOutstanding();
+        if (sweepCap[address(0)] != 0) revert NativeSweepCapSet();
         nativeAliasToken = token;
         emit NativeAliasTokenSet(token);
+    }
+
+    /// @notice Sends the native balance's sub-unit remainder — the part below one base
+    ///         unit of nativeAliasToken — to `to`.
+    /// @dev On an alias chain that remainder (< 1e12 wei on Arc, under a millionth of a
+    ///      dollar) has no ERC-20 representation and every other native exit is closed.
+    ///      The amount is `balance % unit`, so the ERC-20 view of the balance is
+    ///      unchanged by construction. That bound is why this skips the sweep cap and
+    ///      the timelock.
+    function rescueNativeDust(address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+        address aliasToken = nativeAliasToken;
+        if (aliasToken == address(0)) revert NativeNotAliased();
+
+        uint8 aliasDecimals = IERC20Metadata(aliasToken).decimals();
+        if (aliasDecimals >= NATIVE_DECIMALS) revert ZeroAmount(); // no sub-unit to rescue
+        uint256 dust = address(this).balance % (10 ** (NATIVE_DECIMALS - aliasDecimals));
+        if (dust == 0) revert ZeroAmount();
+
+        (bool ok,) = payable(to).call{value: dust}("");
+        if (!ok) revert NativeTransferFailed();
+        emit NativeDustRescued(to, dust);
     }
 
     /// @notice True when native is an alias of an ERC-20 on this chain, and therefore
@@ -1114,7 +1229,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     ///      caps and ledgers.
     function addAllowedPaymentToken(address token) external onlyOwner {
         _rejectAliasedNative(token);
-        require(!allowedPaymentTokens[token], "Token already allowed");
+        if (allowedPaymentTokens[token]) revert TokenAlreadyAllowed();
         allowedPaymentTokens[token] = true;
         allowedPaymentTokenList.push(token);
         allowedPaymentTokenListIndex[token] = allowedPaymentTokenList.length; // 1-based index
@@ -1122,8 +1237,8 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     }
 
     function removeAllowedPaymentToken(address token) external onlyOwner {
-        require(allowedPaymentTokens[token], "Token not in allowlist");
-        require(allowedPaymentTokenListIndex[token] > 0, "Token index inconsistency");
+        if (!allowedPaymentTokens[token]) revert TokenNotAllowed();
+        if (allowedPaymentTokenListIndex[token] == 0) revert IndexInconsistency();
         allowedPaymentTokens[token] = false;
 
         // Swap-and-pop to keep array compact and avoid stale entries
@@ -1167,10 +1282,9 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     function _pullToken(address token, address from, uint256 amount) internal {
         uint256 balanceBefore = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransferFrom(from, address(this), amount);
-        require(
-            IERC20(token).balanceOf(address(this)) - balanceBefore == amount,
-            "Fee-on-transfer tokens not supported"
-        );
+        if (IERC20(token).balanceOf(address(this)) - balanceBefore != amount) {
+            revert FeeOnTransferNotSupported();
+        }
     }
 
     function _transferOutMerchant(address token, address recipient, uint256 amount) private {
@@ -1182,7 +1296,8 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     ///      native path is closed here: the same balance stays fully reachable through
     ///      nativeAliasToken's ERC-20 view, in the 6-decimal units the caps and ledgers
     ///      are denominated in. Only sub-unit dust (< 1e12 native on Arc, i.e. under a
-    ///      millionth of a dollar) is not addressable that way.
+    ///      millionth of a dollar) is not addressable that way; rescueNativeDust
+    ///      sends it on its own path.
     function _sendOut(address token, address to, uint256 amount) private {
         _rejectAliasedNative(token);
         if (token == address(0)) {
@@ -1194,6 +1309,22 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         }
     }
 
+    /// @dev The refId check for the two unsigned entrypoints (bookings, point
+    ///      deposits): a refId already used by any of the three flows is rejected, so
+    ///      one key can never succeed on-chain twice while the API credits it once.
+    ///
+    ///      processMerchantPayment deliberately checks only _consumedRefs. Its refId is
+    ///      the backend's PaymentIntent ULID, and if it also checked the unsigned maps,
+    ///      anyone who saw a pending payment could front-run it with a booking or
+    ///      deposit under the same refId and make that quote permanently unpayable. The
+    ///      direction left open needs someone to use a ULID before the backend mints it,
+    ///      which its 80 random bits rule out.
+    function _isRefIdUsed(string calldata refId) private view returns (bool) {
+        return refToTx[refId] != 0
+            || pointRefToDeposit[refId] != 0
+            || _consumedRefs[keccak256(bytes(refId))];
+    }
+
     function _isValidString(string calldata s) internal pure returns (bool) {
         uint256 len = bytes(s).length;
         return len > 0 && len <= MAX_STRING_LENGTH;
@@ -1203,8 +1334,8 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         internal
         pure
     {
-        require(_isValidString(bookingId), "Invalid bookingId length");
-        require(_isValidString(productVariantId), "Invalid productVariantId length");
-        require(_isValidString(refId), "Invalid refId length");
+        if (!_isValidString(bookingId) || !_isValidString(productVariantId) || !_isValidString(refId)) {
+            revert InvalidStringLength();
+        }
     }
 }
