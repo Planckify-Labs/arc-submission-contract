@@ -127,8 +127,21 @@ pub mod takumi_pay {
 
     // ── Sweep rate limit ───────────────────────────────────────────────
     // Sweeps bypass the withdrawal timelock by design (merchant float has to
-    // settle daily), so a per-token rolling cap bounds what a leaked owner key
-    // can drain per window. Pass Pubkey::default() for native SOL.
+    // settle daily), so a per-token cap bounds what a leaked owner key can move
+    // in any 24 hours. Every exit draws on it, withdrawals included. Pass
+    // Pubkey::default() for native SOL.
+
+    // ── Account migrations ─────────────────────────────────────────────
+    // Grow accounts created before the 2.3.0-parity layout; see migrate.rs.
+    // Run once after upgrading: migrate_config, then migrate_sweep_cap per mint.
+
+    pub fn migrate_config(ctx: Context<MigrateConfig>) -> Result<()> {
+        instructions::migrate::handle_migrate_config(ctx)
+    }
+
+    pub fn migrate_sweep_cap(ctx: Context<MigrateSweepCap>, token_mint: Pubkey) -> Result<()> {
+        instructions::migrate::handle_migrate_sweep_cap(ctx, token_mint)
+    }
 
     pub fn set_sweep_cap(ctx: Context<SetSweepCap>, token_mint: Pubkey, cap: u64) -> Result<()> {
         instructions::sweep_cap::handle_set_sweep_cap(ctx, token_mint, cap)

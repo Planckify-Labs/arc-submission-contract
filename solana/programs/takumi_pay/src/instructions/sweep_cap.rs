@@ -5,32 +5,14 @@ use crate::state::*;
 
 // ── Shared enforcement ─────────────────────────────────────────────────────
 
-/// Charges `amount` against the token's rolling per-window sweep allowance.
+/// Charges `amount` against the token's sweep cap (see `SweepCap::charge`).
 ///
-/// An unset cap fails closed. Every treasury sweep routes through here, which is
-/// what bounds the blast radius of a leaked owner key: sweeps intentionally skip
-/// the withdrawal timelock so merchant float can settle daily, and without this
-/// the timelock would be trivially sidestepped by sweeping instead of withdrawing.
+/// An unset cap fails closed. Every exit routes through here, sweeps and
+/// withdrawals alike, which is what bounds the blast radius of a leaked owner
+/// key: sweeps intentionally skip the withdrawal timelock so merchant float can
+/// settle daily, and an exit that skipped the cap would sidestep it entirely.
 pub fn consume_sweep_allowance(sweep_cap: &mut Account<SweepCap>, amount: u64) -> Result<()> {
-    require!(sweep_cap.cap > 0, TakumiPayError::SweepCapNotSet);
-    if sweep_cap.cap == SWEEP_CAP_UNLIMITED {
-        return Ok(());
-    }
-
-    let now = Clock::get()?.unix_timestamp;
-    if now.saturating_sub(sweep_cap.window_start) >= SWEEP_WINDOW {
-        sweep_cap.window_start = now;
-        sweep_cap.swept_in_window = 0;
-    }
-
-    let swept = sweep_cap
-        .swept_in_window
-        .checked_add(amount)
-        .ok_or(TakumiPayError::Overflow)?;
-    require!(swept <= sweep_cap.cap, TakumiPayError::SweepCapExceeded);
-    sweep_cap.swept_in_window = swept;
-
-    Ok(())
+    sweep_cap.charge(Clock::get()?.unix_timestamp, amount)
 }
 
 // ── Set Sweep Cap (lower / tighten — immediate) ────────────────────────────
@@ -63,6 +45,10 @@ pub struct SetSweepCap<'info> {
 /// Lowers a token's sweep cap. Immediate — tightening a control is always safe.
 /// Raising must go through `queue_sweep_cap`, otherwise the rate limit would be
 /// one call away from being defeated.
+///
+/// 0 is the emergency brake: it freezes every exit for the token. Any raise
+/// already queued is cancelled, so a tightening always supersedes a pending
+/// loosening and the brake holds in a single call.
 pub fn handle_set_sweep_cap(ctx: Context<SetSweepCap>, token_mint: Pubkey, cap: u64) -> Result<()> {
     let sc = &mut ctx.accounts.sweep_cap;
 
@@ -75,6 +61,11 @@ pub fn handle_set_sweep_cap(ctx: Context<SetSweepCap>, token_mint: Pubkey, cap: 
     require!(cap <= sc.cap, TakumiPayError::NotALoosening);
 
     sc.cap = cap;
+    if sc.pending_unlock_time > 0 {
+        sc.pending_cap = 0;
+        sc.pending_unlock_time = 0;
+        emit!(PendingSweepCapCancelled { token_mint });
+    }
 
     emit!(SweepCapUpdated {
         token_mint,
@@ -168,6 +159,7 @@ pub fn handle_apply_sweep_cap(
     token_mint: Pubkey,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
+    let rearmed_at = ctx.accounts.config.rearmed_at();
     let sc = &mut ctx.accounts.sweep_cap;
 
     require!(
@@ -175,7 +167,7 @@ pub fn handle_apply_sweep_cap(
         TakumiPayError::NoPendingChange
     );
     require!(
-        now >= sc.pending_unlock_time,
+        now >= sc.pending_unlock_time && now >= rearmed_at,
         TakumiPayError::PendingChangeLocked
     );
 

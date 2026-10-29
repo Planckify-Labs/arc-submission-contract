@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod config;
 pub mod merchant;
+pub mod migrate;
 pub mod point;
 pub mod sweep_cap;
 pub mod transaction;
@@ -10,6 +11,7 @@ pub mod withdraw;
 pub use admin::*;
 pub use config::*;
 pub use merchant::*;
+pub use migrate::*;
 pub use point::*;
 pub use sweep_cap::*;
 pub use transaction::*;

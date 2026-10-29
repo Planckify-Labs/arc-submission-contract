@@ -13,6 +13,7 @@ import {
   createMint,
   getOrCreateAssociatedTokenAccount,
   getAssociatedTokenAddressSync,
+  getAccount,
   mintTo,
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -117,6 +118,14 @@ describe("takumi_pay", () => {
   const sweepCapPda = (mint: PublicKey): PublicKey =>
     PublicKey.findProgramAddressSync(
       [Buffer.from("sweep_cap"), configPda.toBuffer(), mint.toBuffer()],
+      program.programId
+    )[0];
+
+  // Exits take the mint's PlatformFeeAccount (which may not exist yet) so they
+  // can keep the fee ledger backed.
+  const platformFeePda = (mint: PublicKey): PublicKey =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("platform_fee"), configPda.toBuffer(), mint.toBuffer()],
       program.programId
     )[0];
 
@@ -1247,6 +1256,13 @@ describe("takumi_pay", () => {
   // ── Withdrawals — Immediate ──────────────────────────────────────────
 
   describe("Withdrawals — Immediate", () => {
+    before(async () => {
+      // Withdrawals draw on the sweep cap like every other exit and fail closed
+      // without one. Finite here so the Treasury block can still raise them.
+      await raiseSweepCap(PublicKey.default, new anchor.BN("1000000000000000"));
+      await raiseSweepCap(tokenMint, new anchor.BN("1000000000000000"));
+    });
+
     it("withdraws SOL", async () => {
       const recipient = Keypair.generate();
 
@@ -1259,6 +1275,8 @@ describe("takumi_pay", () => {
         .accounts({
           owner: owner.publicKey,
           config: configPda,
+          sweepCap: sweepCapPda(PublicKey.default),
+          platformFeeAccount: platformFeePda(PublicKey.default),
           recipient: recipient.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -1287,6 +1305,8 @@ describe("takumi_pay", () => {
           config: configPda,
           tokenMint,
           vaultTokenAccount: vaultAta,
+          sweepCap: sweepCapPda(tokenMint),
+          platformFeeAccount: platformFeePda(tokenMint),
           recipientTokenAccount: recipientAta.address,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
@@ -1311,6 +1331,8 @@ describe("takumi_pay", () => {
           .accounts({
             owner: nobody.publicKey,
             config: configPda,
+            sweepCap: sweepCapPda(PublicKey.default),
+            platformFeeAccount: platformFeePda(PublicKey.default),
             recipient: nobody.publicKey,
             systemProgram: SystemProgram.programId,
           })
@@ -1318,7 +1340,7 @@ describe("takumi_pay", () => {
           .rpc();
         expect.fail("Should have thrown");
       } catch (err: any) {
-        expect(err.error?.errorCode?.code || "ConstraintHasOne").to.be.oneOf([
+        expect(err.error?.errorCode?.code).to.be.oneOf([
           "NotOwner",
           "ConstraintHasOne",
         ]);
@@ -1346,6 +1368,8 @@ describe("takumi_pay", () => {
           .accounts({
             owner: owner.publicKey,
             config: configPda,
+            sweepCap: sweepCapPda(PublicKey.default),
+            platformFeeAccount: platformFeePda(PublicKey.default),
             recipient: owner.publicKey,
             systemProgram: SystemProgram.programId,
           })
@@ -1400,6 +1424,8 @@ describe("takumi_pay", () => {
           owner: owner.publicKey,
           config: configPda,
           withdrawalRequest: withdrawalPda,
+          sweepCap: sweepCapPda(PublicKey.default),
+          platformFeeAccount: platformFeePda(PublicKey.default),
           recipient: recipient.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -1475,15 +1501,15 @@ describe("takumi_pay", () => {
             owner: owner.publicKey,
             config: configPda,
             withdrawalRequest: withdrawalPda,
+            sweepCap: sweepCapPda(PublicKey.default),
+            platformFeeAccount: platformFeePda(PublicKey.default),
             recipient: owner.publicKey,
             systemProgram: SystemProgram.programId,
           })
           .rpc();
         expect.fail("Should have thrown");
       } catch (err: any) {
-        expect(err.error?.errorCode?.code || "AlreadyCancelled").to.equal(
-          "AlreadyCancelled"
-        );
+        expect(err.error?.errorCode?.code).to.equal("AlreadyCancelled");
       }
     });
 
@@ -1802,8 +1828,8 @@ describe("takumi_pay", () => {
           .accounts({
             owner: owner.publicKey,
             config: configPda,
-          sweepCap: sweepCapPda(tokenMint),
             sweepCap: sweepCapPda(uncapped),
+            platformFeeAccount: platformFeePda(uncapped),
             tokenMint: uncapped,
             vaultTokenAccount: getAssociatedTokenAddressSync(
               uncapped,
@@ -1819,9 +1845,8 @@ describe("takumi_pay", () => {
           .rpc();
         expect.fail("Should have thrown");
       } catch (err: any) {
-        // The cap PDA does not exist, so account resolution fails before the
-        // handler — either way the sweep is denied.
-        expect(err).to.exist;
+        // The cap PDA was never created, so the sweep fails closed loading it.
+        expect(err.error?.errorCode?.code).to.equal("AccountNotInitialized");
       }
     });
 
@@ -1902,6 +1927,7 @@ describe("takumi_pay", () => {
           owner: owner.publicKey,
           config: configPda,
           sweepCap: sweepCapPda(PublicKey.default),
+          platformFeeAccount: platformFeePda(PublicKey.default),
           recipient: recipient.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -1971,6 +1997,7 @@ describe("takumi_pay", () => {
           owner: owner.publicKey,
           config: configPda,
           sweepCap: sweepCapPda(tokenMint),
+          platformFeeAccount: platformFeePda(tokenMint),
           tokenMint,
           vaultTokenAccount: vaultAta,
           recipientTokenAccount: recipientAta.address,
@@ -2079,6 +2106,227 @@ describe("takumi_pay", () => {
       } catch (err: any) {
         expect(err.error?.errorCode?.code).to.equal("DelayExceedsMax");
       }
+    });
+  });
+
+  // ── Fixes ported from EVM 2.3.0 ──────────────────────────────────────
+  // Section numbers refer to the Olympix scan of the EVM contract
+  // (contract/evm/docs/olympix-bugpocer-response-2.2.0.md). The timing rules
+  // themselves (exact 24h expiry, the 16-exit log) are unit-tested in
+  // state.rs; these check the instructions are wired to them.
+
+  describe("EVM 2.3.0 parity", () => {
+    const UNLIMITED = new anchor.BN("18446744073709551615");
+    let mint: PublicKey;
+    let vault: PublicKey;
+
+    before(async () => {
+      mint = await createMint(connection, owner.payer, owner.publicKey, null, 6);
+      vault = (
+        await getOrCreateAssociatedTokenAccount(connection, owner.payer, mint, configPda, true)
+      ).address;
+      await mintTo(connection, owner.payer, mint, vault, owner.payer, 1_000_000);
+      await allowPaymentToken(mint);
+    });
+
+    const freshRecipient = async (): Promise<PublicKey> =>
+      (
+        await getOrCreateAssociatedTokenAccount(
+          connection,
+          owner.payer,
+          mint,
+          Keypair.generate().publicKey
+        )
+      ).address;
+
+    const exitAccounts = (to: PublicKey) => ({
+      owner: owner.publicKey,
+      config: configPda,
+      sweepCap: sweepCapPda(mint),
+      platformFeeAccount: platformFeePda(mint),
+      tokenMint: mint,
+      vaultTokenAccount: vault,
+      recipientTokenAccount: to,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    });
+
+    const errorCode = async (p: Promise<unknown>): Promise<string | undefined> => {
+      try {
+        await p;
+        return undefined;
+      } catch (err: any) {
+        return err.error?.errorCode?.code;
+      }
+    };
+
+    it("withdrawals draw on the sweep cap and fail closed without one", async () => {
+      const to = await freshRecipient();
+      expect(
+        await errorCode(program.methods.withdrawToken(new anchor.BN(1)).accounts(exitAccounts(to)).rpc())
+      ).to.equal("AccountNotInitialized");
+
+      await raiseSweepCap(mint, new anchor.BN(100_000));
+      await program.methods.sweepMerchantBackingToken(new anchor.BN(60_000)).accounts(exitAccounts(to)).rpc();
+      expect(
+        await errorCode(program.methods.withdrawToken(new anchor.BN(50_000)).accounts(exitAccounts(to)).rpc())
+      ).to.equal("SweepCapExceeded");
+      await program.methods.withdrawToken(new anchor.BN(40_000)).accounts(exitAccounts(to)).rpc();
+
+      const sc = await program.account.sweepCap.fetch(sweepCapPda(mint));
+      expect(sc.exitLog.filter((e: anchor.BN) => !e.isZero()).length).to.equal(2);
+    });
+
+    it("the brake cancels a queued raise (5.2.4)", async () => {
+      const capAccounts = {
+        owner: owner.publicKey,
+        config: configPda,
+        sweepCap: sweepCapPda(mint),
+        systemProgram: SystemProgram.programId,
+      };
+      await program.methods.queueSweepCap(mint, UNLIMITED).accounts(capAccounts).rpc();
+      let sc = await program.account.sweepCap.fetch(sweepCapPda(mint));
+      expect(sc.pendingUnlockTime.toNumber()).to.be.greaterThan(0);
+
+      await program.methods.setSweepCap(mint, new anchor.BN(0)).accounts(capAccounts).rpc();
+      sc = await program.account.sweepCap.fetch(sweepCapPda(mint));
+      expect(sc.cap.toNumber()).to.equal(0);
+      expect(sc.pendingUnlockTime.toNumber()).to.equal(0);
+      expect(
+        await errorCode(program.methods.applySweepCap(mint).accounts({
+          owner: owner.publicKey,
+          config: configPda,
+          sweepCap: sweepCapPda(mint),
+        }).rpc())
+      ).to.equal("NoPendingChange");
+    });
+
+    it("backing sweeps leave accrued fees; withdrawals book the fees they take (5.2.5)", async () => {
+      await raiseSweepCap(mint, UNLIMITED);
+
+      // A merchant payment of 50_000 with a 5_000 fee into the mint.
+      const refId = "parity-fee-001";
+      const refIdHash = await sha256(refId);
+      const expiresAt = new anchor.BN(Math.floor(Date.now() / 1000) + 300);
+      const quote = {
+        refId,
+        merchantId: "shop-parity",
+        tokenMint: mint,
+        amount: new anchor.BN(50_000),
+        platformFeeAmount: new anchor.BN(5_000),
+        fiatAmountMinor: new anchor.BN(500),
+        fiatCurrency: [85, 83, 68],
+        exchangeRateId: new anchor.BN(10),
+        expiresAt,
+      };
+      const message = buildQuoteMessage(quote);
+      const signature = nacl.sign.detached(message, backendSigner.secretKey);
+      const payerAta = await getOrCreateAssociatedTokenAccount(connection, owner.payer, mint, owner.publicKey);
+      await mintTo(connection, owner.payer, mint, payerAta.address, owner.payer, 50_000);
+      await program.methods
+        .processMerchantPaymentToken({
+          refId,
+          refIdHash,
+          merchantId: quote.merchantId,
+          amount: quote.amount,
+          platformFeeAmount: quote.platformFeeAmount,
+          fiatAmountMinor: quote.fiatAmountMinor,
+          fiatCurrency: quote.fiatCurrency,
+          exchangeRateId: quote.exchangeRateId,
+          expiresAt,
+        })
+        .accounts({
+          payer: owner.publicKey,
+          config: configPda,
+          allowedToken: allowedPaymentTokenPda(mint),
+          merchantPayment: PublicKey.findProgramAddressSync(
+            [Buffer.from("merchant_payment"), configPda.toBuffer(), Buffer.from(refIdHash)],
+            program.programId
+          )[0],
+          platformFeeAccount: platformFeePda(mint),
+          tokenMint: mint,
+          payerTokenAccount: payerAta.address,
+          vaultTokenAccount: vault,
+          instructionsSysvar: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .preInstructions([
+          Ed25519Program.createInstructionWithPublicKey({
+            publicKey: backendSigner.publicKey.toBytes(),
+            message,
+            signature,
+          }),
+        ])
+        .rpc();
+
+      const to = await freshRecipient();
+      const held = Number((await getAccount(connection, vault)).amount);
+      expect(
+        await errorCode(
+          program.methods.sweepMerchantBackingToken(new anchor.BN(held)).accounts(exitAccounts(to)).rpc()
+        )
+      ).to.equal("InsufficientBalance");
+
+      // Sweep down to 6_000 left: 5_000 of fees and 1_000 of float.
+      await program.methods
+        .sweepMerchantBackingToken(new anchor.BN(held - 6_000))
+        .accounts(exitAccounts(to))
+        .rpc();
+
+      // Withdrawing 4_000 dips 3_000 into the fee-backed balance.
+      const sig = await program.methods.withdrawToken(new anchor.BN(4_000)).accounts(exitAccounts(to)).rpc();
+      const pfa = await program.account.platformFeeAccount.fetch(platformFeePda(mint));
+      expect(pfa.accruedAmount.toNumber()).to.equal(2_000);
+
+      await connection.confirmTransaction(sig, "confirmed");
+      const tx = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+      const events = [...new anchor.EventParser(program.programId, program.coder).parseLogs(tx!.meta!.logMessages!)];
+      const swept = events.find((e) => e.name === "platformFeesSwept");
+      expect(swept?.data.amount.toNumber()).to.equal(3_000);
+      expect(swept?.data.recipient.toBase58()).to.equal(to.toBase58());
+    });
+
+    it("raising the delay re-arms a queued cap raise (5.2.1)", async () => {
+      const someMint = Keypair.generate().publicKey;
+      const capAccounts = {
+        owner: owner.publicKey,
+        config: configPda,
+        sweepCap: sweepCapPda(someMint),
+        systemProgram: SystemProgram.programId,
+      };
+      const delay = (seconds: number) =>
+        program.methods
+          .setWithdrawalDelay(new anchor.BN(seconds))
+          .accounts({ owner: owner.publicKey, config: configPda })
+          .rpc();
+      const apply = () =>
+        program.methods
+          .applySweepCap(someMint)
+          .accounts({ owner: owner.publicKey, config: configPda, sweepCap: sweepCapPda(someMint) })
+          .rpc();
+
+      await delay(2);
+      await program.methods.queueSweepCap(someMint, new anchor.BN(1_000)).accounts(capAccounts).rpc();
+      await delay(6); // raised: the queued raise now waits the full 6s from here
+      await sleep(3_000); // past the raise's own 2s unlock
+      expect(await errorCode(apply())).to.equal("PendingChangeLocked");
+
+      await sleep(4_000); // past the re-armed 6s
+      await apply();
+      const sc = await program.account.sweepCap.fetch(sweepCapPda(someMint));
+      expect(sc.cap.toNumber()).to.equal(1_000);
+
+      // Back to 0 for anything that runs after this.
+      await program.methods
+        .queueWithdrawalDelay(new anchor.BN(0))
+        .accounts({ owner: owner.publicKey, config: configPda })
+        .rpc();
+      await sleep(7_000);
+      await program.methods
+        .applyWithdrawalDelay()
+        .accounts({ owner: owner.publicKey, config: configPda })
+        .rpc();
     });
   });
 });

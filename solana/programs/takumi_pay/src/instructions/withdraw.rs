@@ -2,6 +2,8 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{self, Mint, TokenInterface, TokenAccount, TransferChecked};
 
 use crate::errors::TakumiPayError;
+use crate::instructions::sweep_cap::consume_sweep_allowance;
+use crate::instructions::treasury::{settle_fee_ledger, sol_float};
 use crate::state::*;
 
 // ── Withdraw SOL (Immediate) ───────────────────────────────────────────────
@@ -18,6 +20,23 @@ pub struct WithdrawSol<'info> {
     )]
     pub config: Account<'info, Config>,
 
+    #[account(
+        mut,
+        seeds = [SWEEP_CAP_SEED, config.key().as_ref(), Pubkey::default().as_ref()],
+        bump = sweep_cap.bump,
+        has_one = config,
+    )]
+    pub sweep_cap: Account<'info, SweepCap>,
+
+    /// CHECK: native SOL's PlatformFeeAccount, which may not exist yet. Written
+    /// by `settle_fee_ledger`, which checks its owner and discriminator.
+    #[account(
+        mut,
+        seeds = [PLATFORM_FEE_SEED, config.key().as_ref(), Pubkey::default().as_ref()],
+        bump,
+    )]
+    pub platform_fee_account: UncheckedAccount<'info>,
+
     /// CHECK: Recipient for SOL. Validated as non-default in handler.
     #[account(mut)]
     pub recipient: AccountInfo<'info>,
@@ -25,6 +44,9 @@ pub struct WithdrawSol<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Immediate withdrawal, only while no delay is configured. Like every exit it
+/// is bounded by the sweep cap. It is a whole-treasury exit: it does not hold
+/// back accrued fees, and fees it takes are booked as swept.
 pub fn handle_withdraw_sol(ctx: Context<WithdrawSol>, amount: u64) -> Result<()> {
     require!(amount > 0, TakumiPayError::ZeroAmount);
     require!(
@@ -35,8 +57,15 @@ pub fn handle_withdraw_sol(ctx: Context<WithdrawSol>, amount: u64) -> Result<()>
         ctx.accounts.config.withdrawal_delay == 0,
         TakumiPayError::TimelockActive
     );
+    consume_sweep_allowance(&mut ctx.accounts.sweep_cap, amount)?;
 
     transfer_sol_from_config(&ctx.accounts.config, &ctx.accounts.recipient, amount)?;
+    settle_fee_ledger(
+        &ctx.accounts.platform_fee_account,
+        sol_float(&ctx.accounts.config.to_account_info())?,
+        Pubkey::default(),
+        ctx.accounts.recipient.key(),
+    )?;
 
     emit!(WithdrawEvent {
         recipient: ctx.accounts.recipient.key(),
@@ -69,18 +98,38 @@ pub struct WithdrawToken<'info> {
     )]
     pub vault_token_account: InterfaceAccount<'info, TokenAccount>,
 
+    #[account(
+        mut,
+        seeds = [SWEEP_CAP_SEED, config.key().as_ref(), token_mint.key().as_ref()],
+        bump = sweep_cap.bump,
+        has_one = config,
+    )]
+    pub sweep_cap: Account<'info, SweepCap>,
+
+    /// CHECK: this mint's PlatformFeeAccount, which may not exist yet. Written by
+    /// `settle_fee_ledger`, which checks its owner and discriminator.
+    #[account(
+        mut,
+        seeds = [PLATFORM_FEE_SEED, config.key().as_ref(), token_mint.key().as_ref()],
+        bump,
+    )]
+    pub platform_fee_account: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub recipient_token_account: InterfaceAccount<'info, TokenAccount>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
 
+/// Immediate withdrawal, only while no delay is configured. Like every exit it
+/// is bounded by the sweep cap, and fees it takes are booked as swept.
 pub fn handle_withdraw_token(ctx: Context<WithdrawToken>, amount: u64) -> Result<()> {
     require!(amount > 0, TakumiPayError::ZeroAmount);
     require!(
         ctx.accounts.config.withdrawal_delay == 0,
         TakumiPayError::TimelockActive
     );
+    consume_sweep_allowance(&mut ctx.accounts.sweep_cap, amount)?;
 
     let config_bump = ctx.accounts.config.bump;
     let seeds: &[&[u8]] = &[CONFIG_SEED, &[config_bump]];
@@ -100,6 +149,13 @@ pub fn handle_withdraw_token(ctx: Context<WithdrawToken>, amount: u64) -> Result
         ),
         amount,
         ctx.accounts.token_mint.decimals,
+    )?;
+    ctx.accounts.vault_token_account.reload()?;
+    settle_fee_ledger(
+        &ctx.accounts.platform_fee_account,
+        ctx.accounts.vault_token_account.amount,
+        ctx.accounts.token_mint.key(),
+        ctx.accounts.recipient_token_account.key(),
     )?;
 
     emit!(WithdrawEvent {
@@ -132,6 +188,12 @@ pub struct SetWithdrawalDelay<'info> {
 /// so the reduction is itself subject to the delay currently in force. Without
 /// that the timelock is decorative: an owner key that leaks would simply set the
 /// delay to 0 and withdraw in the same transaction.
+///
+/// It also restarts the clock on everything already queued: sweep cap raises,
+/// delay cuts and withdrawals all wait the full new delay from now (see
+/// `Config::rearmed_at`), so raising the delay works as an emergency brake on
+/// entries queued under the shorter one. Calling it with the current value
+/// restarts the clock without changing the delay.
 pub fn handle_set_withdrawal_delay(ctx: Context<SetWithdrawalDelay>, delay: i64) -> Result<()> {
     require!(delay >= 0 && delay <= MAX_WITHDRAWAL_DELAY, TakumiPayError::DelayExceedsMax);
     require!(
@@ -140,6 +202,7 @@ pub fn handle_set_withdrawal_delay(ctx: Context<SetWithdrawalDelay>, delay: i64)
     );
 
     ctx.accounts.config.withdrawal_delay = delay;
+    ctx.accounts.config.withdrawal_delay_raised_at = Clock::get()?.unix_timestamp;
 
     emit!(WithdrawalDelayUpdated { delay });
     Ok(())
@@ -174,7 +237,7 @@ pub fn handle_apply_withdrawal_delay(ctx: Context<SetWithdrawalDelay>) -> Result
         TakumiPayError::NoPendingChange
     );
     require!(
-        now >= config.pending_delay_unlock_time,
+        now >= config.pending_delay_unlock_time && now >= config.rearmed_at(),
         TakumiPayError::PendingChangeLocked
     );
 
@@ -308,6 +371,23 @@ pub struct ExecuteWithdrawalSol<'info> {
     )]
     pub withdrawal_request: Account<'info, WithdrawalRequest>,
 
+    #[account(
+        mut,
+        seeds = [SWEEP_CAP_SEED, config.key().as_ref(), Pubkey::default().as_ref()],
+        bump = sweep_cap.bump,
+        has_one = config,
+    )]
+    pub sweep_cap: Account<'info, SweepCap>,
+
+    /// CHECK: native SOL's PlatformFeeAccount, which may not exist yet. Written
+    /// by `settle_fee_ledger`, which checks its owner and discriminator.
+    #[account(
+        mut,
+        seeds = [PLATFORM_FEE_SEED, config.key().as_ref(), Pubkey::default().as_ref()],
+        bump,
+    )]
+    pub platform_fee_account: UncheckedAccount<'info>,
+
     /// CHECK: Validated against withdrawal_request.recipient.
     #[account(
         mut,
@@ -318,17 +398,27 @@ pub struct ExecuteWithdrawalSol<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Executes a queued SOL withdrawal once its own unlock time and the re-armed
+/// delay have both passed. Like every exit it is bounded by the sweep cap, and
+/// fees it takes are booked as swept.
 pub fn handle_execute_withdrawal_sol(ctx: Context<ExecuteWithdrawalSol>) -> Result<()> {
-    let clock = Clock::get()?;
+    let now = Clock::get()?.unix_timestamp;
     require!(
-        clock.unix_timestamp >= ctx.accounts.withdrawal_request.unlock_time,
+        now >= ctx.accounts.withdrawal_request.unlock_time && now >= ctx.accounts.config.rearmed_at(),
         TakumiPayError::TimelockNotExpired
     );
 
     let amount = ctx.accounts.withdrawal_request.amount;
+    consume_sweep_allowance(&mut ctx.accounts.sweep_cap, amount)?;
     ctx.accounts.withdrawal_request.executed = true;
 
     transfer_sol_from_config(&ctx.accounts.config, &ctx.accounts.recipient, amount)?;
+    settle_fee_ledger(
+        &ctx.accounts.platform_fee_account,
+        sol_float(&ctx.accounts.config.to_account_info())?,
+        Pubkey::default(),
+        ctx.accounts.recipient.key(),
+    )?;
 
     emit!(WithdrawalExecuted {
         withdrawal_id: ctx.accounts.withdrawal_request.key(),
@@ -377,20 +467,41 @@ pub struct ExecuteWithdrawalToken<'info> {
     )]
     pub vault_token_account: InterfaceAccount<'info, TokenAccount>,
 
+    #[account(
+        mut,
+        seeds = [SWEEP_CAP_SEED, config.key().as_ref(), token_mint.key().as_ref()],
+        bump = sweep_cap.bump,
+        has_one = config,
+    )]
+    pub sweep_cap: Account<'info, SweepCap>,
+
+    /// CHECK: this mint's PlatformFeeAccount, which may not exist yet. Written by
+    /// `settle_fee_ledger`, which checks its owner and discriminator.
+    #[account(
+        mut,
+        seeds = [PLATFORM_FEE_SEED, config.key().as_ref(), token_mint.key().as_ref()],
+        bump,
+    )]
+    pub platform_fee_account: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub recipient_token_account: InterfaceAccount<'info, TokenAccount>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
 
+/// Executes a queued token withdrawal once its own unlock time and the re-armed
+/// delay have both passed. Like every exit it is bounded by the sweep cap, and
+/// fees it takes are booked as swept.
 pub fn handle_execute_withdrawal_token(ctx: Context<ExecuteWithdrawalToken>) -> Result<()> {
-    let clock = Clock::get()?;
+    let now = Clock::get()?.unix_timestamp;
     require!(
-        clock.unix_timestamp >= ctx.accounts.withdrawal_request.unlock_time,
+        now >= ctx.accounts.withdrawal_request.unlock_time && now >= ctx.accounts.config.rearmed_at(),
         TakumiPayError::TimelockNotExpired
     );
 
     let amount = ctx.accounts.withdrawal_request.amount;
+    consume_sweep_allowance(&mut ctx.accounts.sweep_cap, amount)?;
     ctx.accounts.withdrawal_request.executed = true;
 
     let config_bump = ctx.accounts.config.bump;
@@ -411,6 +522,13 @@ pub fn handle_execute_withdrawal_token(ctx: Context<ExecuteWithdrawalToken>) -> 
         ),
         amount,
         ctx.accounts.token_mint.decimals,
+    )?;
+    ctx.accounts.vault_token_account.reload()?;
+    settle_fee_ledger(
+        &ctx.accounts.platform_fee_account,
+        ctx.accounts.vault_token_account.amount,
+        ctx.accounts.token_mint.key(),
+        ctx.accounts.recipient_token_account.key(),
     )?;
 
     emit!(WithdrawalExecuted {

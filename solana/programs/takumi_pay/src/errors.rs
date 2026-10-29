@@ -74,4 +74,8 @@ pub enum TakumiPayError {
     NoPendingChange,
     #[msg("Pending change is still timelocked")]
     PendingChangeLocked,
+    #[msg("Sixteen capped exits already left this token in the last 24 hours")]
+    SweepLogFull,
+    #[msg("Account is already at the current layout")]
+    AlreadyMigrated,
 }
