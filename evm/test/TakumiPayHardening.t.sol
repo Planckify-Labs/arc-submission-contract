@@ -176,7 +176,7 @@ contract TakumiPayHardeningTest is Test {
     }
 
     function test_revert_queueUpgrade_zeroAddress() public {
-        vm.expectRevert(TakumiPay.ZeroAddress.selector);
+        vm.expectRevert(TakumiPay.NoImplementationCode.selector);
         wallet.queueUpgrade(address(0));
     }
 

@@ -762,7 +762,7 @@ contract TakumiPayProductionTest is Test {
     // ====== Upgradeability ======
 
     function test_Version_Returns_Current() public view {
-        assertEq(wallet.version(), "2.2.0");
+        assertEq(wallet.version(), "2.3.0");
     }
 
     function test_UpgradeToAndCall_RevertIf_NotOwner() public {

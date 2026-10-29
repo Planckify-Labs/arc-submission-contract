@@ -562,7 +562,7 @@ contract TakumiPayMerchantTest is Test {
     // ====== version ======
 
     function test_version() public view {
-        assertEq(wallet.version(), "2.2.0");
+        assertEq(wallet.version(), "2.3.0");
     }
 
     // ====== Booking and merchant flows coexist ======

@@ -14,8 +14,8 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 /// @notice Payment contract supporting ERC20 + native token transactions, merchant
 ///         payments against backend-signed EIP-712 quotes, and point deposits.
 ///         Deployed behind a UUPS proxy for upgradeability.
-/// @dev Storage layout must never be reordered between upgrades. Append new slots only.
-///      Storage gap __gap reserves 50 slots for future extensions.
+/// @dev Storage layout must never be reordered between upgrades. Append new slots only,
+///      before __gap, and shrink __gap by the same number of slots.
 ///
 ///      Every OpenZeppelin base here (Initializable, UUPSUpgradeable,
 ///      ReentrancyGuardUpgradeable, EIP712Upgradeable) uses ERC-7201 namespaced
@@ -44,7 +44,10 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     // ====== Spending Limits ======
 
-    mapping(address => uint256) public maxTransactionAmount; // token => max amount (0 = no limit)
+    /// @dev token => max amount per booking (0 = no limit). Applies to createTransaction
+    ///      and each item of createTransactionBatch only, not to point deposits or
+    ///      merchant payments, matching the Solana sibling's spending limit.
+    mapping(address => uint256) public maxTransactionAmount;
 
     // ====== Withdrawal Timelock ======
 
@@ -161,10 +164,10 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     // ====== Sweep Rate Limit ======
     // Treasury sweeps deliberately bypass the withdrawal timelock — merchant float
-    // has to settle daily, and a 7-day queue would break that. A per-token rolling
-    // cap gives back the property the timelock was there for: an owner key that
-    // leaks can only drain `sweepCap` per window, and every window is visible
-    // on-chain, instead of emptying the contract in one transaction.
+    // has to settle daily, and a 7-day queue would break that. A per-token sweep cap
+    // gives back the property the timelock was there for: an owner key that leaks can
+    // move at most `sweepCap` in any 24 hours, every exit visible on-chain, instead of
+    // emptying the contract in one transaction. setSweepCap(token, 0) stops it at once.
 
     uint256 public constant SWEEP_WINDOW = 1 days;
     /// @dev Sentinel meaning "no cap". Set explicitly — it is not the default.
@@ -175,6 +178,10 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     ///      Unlike `maxTransactionAmount`, where 0 means "no limit", this is a security
     ///      control, so an unconfigured value must fail closed.
     mapping(address => uint256) public sweepCap;
+    /// @dev 2.1.0's fixed-window state. Since 2.3.0 exits are tracked in _sweepLog and
+    ///      these two are no longer written. A proxy upgraded from 2.1.0 keeps the last
+    ///      window's total here, and _sweepUsage still counts it until none of its exits
+    ///      can be inside the trailing 24 hours. Read sweepAllowance for what can leave now.
     mapping(address => uint256) public sweptInWindow;
     mapping(address => uint256) public sweepWindowStart;
 
@@ -218,11 +225,32 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     uint256 private constant ARC_TESTNET_CHAIN_ID = 5042002;
     /// @dev Decimals of the native coin. Arc's native USDC is 18, like every EVM chain.
     uint8 private constant NATIVE_DECIMALS = 18;
+    /// @dev Fewest decimals rescueNativeDust accepts from the alias, which keeps its
+    ///      remainder under 10^(18 - 6) = 1e12 wei whatever token the alias points to.
+    uint8 private constant MIN_ALIAS_DECIMALS = 6;
+
+    // ====== Delay Re-arm (added in 2.3.0) ======
+
+    /// @dev When setWithdrawalDelay last ran. A queued loosening or withdrawal also has
+    ///      to wait the full current delay from this moment, so raising the delay
+    ///      reaches entries queued under a shorter one. 0 on proxies upgraded from
+    ///      older versions until the delay is next set, which leaves them unchanged.
+    uint256 public withdrawalDelayRaisedAt;
+
+    // ====== Sweep Log (added in 2.3.0) ======
+
+    /// @dev Most capped exits one token can make within SWEEP_WINDOW.
+    uint256 private constant SWEEP_LOG_SIZE = 16;
+
+    /// @dev token => its recent capped exits, each packed as (timestamp << 192 | amount).
+    ///      Order means nothing: an entry SWEEP_WINDOW old or more is expired, and its
+    ///      slot is reused. See _consumeSweepAllowance.
+    mapping(address => uint256[SWEEP_LOG_SIZE]) private _sweepLog;
 
     // ====== Storage Gap ======
     // Reserve slots for future upgrades. Decrement when adding new state variables.
 
-    uint256[45] private __gap;
+    uint256[43] private __gap;
 
     // ====== EIP-712 ======
 
@@ -360,6 +388,9 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     error PointDepositNotFound();
     error TokenAlreadyAllowed();
     error FeeOnTransferNotSupported();
+    error NoImplementationCode();
+    error AliasDecimalsUnsupported();
+    error SweepLogFull();
 
     // ====== Modifiers ======
 
@@ -425,22 +456,28 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     ///      loosening there is and goes through the same pending-change queue as the
     ///      rest. Queuing again replaces the pending implementation;
     ///      cancelPendingChange(keccak256("upgrade")) withdraws it.
+    ///
+    ///      The delay exists so the new code can be reviewed before it runs, so the
+    ///      implementation must already have code and the queue stores its codehash,
+    ///      not its address. What runs is then exactly what was public while the entry
+    ///      waited. A UUPS implementation embeds its own address as an immutable, so the
+    ///      codehash pins the address as well.
     function queueUpgrade(address newImplementation) external onlyOwner {
-        if (newImplementation == address(0)) revert ZeroAddress();
-        _queueLoosening(UPGRADE_KEY, uint256(uint160(newImplementation)));
+        if (newImplementation.code.length == 0) revert NoImplementationCode();
+        _queueLoosening(UPGRADE_KEY, uint256(newImplementation.codehash));
         emit UpgradeQueued(newImplementation, block.timestamp + withdrawalDelay);
     }
 
-    /// @dev Owner-only, and only for the implementation that was queued and has
-    ///      waited out its delay. Consuming the entry makes each queue single-use.
+    /// @dev Owner-only, and only for the code that was queued and has waited out its
+    ///      delay. Consuming the entry makes each queue single-use.
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
-        if (_pendingChanges[UPGRADE_KEY].value != uint256(uint160(newImplementation))) revert UpgradeNotQueued();
+        if (_pendingChanges[UPGRADE_KEY].value != uint256(newImplementation.codehash)) revert UpgradeNotQueued();
         _consumePending(UPGRADE_KEY);
     }
 
     /// @notice Returns the current implementation version string.
     function version() external pure returns (string memory) {
-        return "2.2.0";
+        return "2.3.0";
     }
 
     /// @notice Returns the EIP-712 domain separator used for quote verification.
@@ -717,35 +754,69 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         emit PlatformFeesSwept(token, recipient, amount);
     }
 
-    /// @notice Sweeps merchant backing funds to a recipient (unbounded by fee accrual —
-    ///         this is the float backing merchant payouts), subject to the per-window
-    ///         sweep cap.
+    /// @notice Sweeps merchant backing funds (the float backing merchant payouts) to a
+    ///         recipient, subject to the sweep cap. Accrued platform fees are not float:
+    ///         they stay behind for sweepPlatformFees, so the fee ledger stays backed.
     function sweepMerchantBacking(address token, address recipient, uint256 amount)
         external onlyOwner nonReentrant
     {
         if (amount == 0) revert ZeroAmount();
-        uint256 balance = token == address(0) ? address(this).balance : IERC20(token).balanceOf(address(this));
-        if (amount > balance) revert InsufficientBalance();
+        uint256 balance = _heldBalance(token);
+        uint256 fees = platformFeeAccrued[token];
+        if (fees > balance || amount > balance - fees) revert InsufficientBalance();
         _consumeSweepAllowance(token, amount);
         _transferOutMerchant(token, recipient, amount);
         emit MerchantBackingSwept(token, recipient, amount);
     }
 
-    /// @dev Charges `amount` against the token's rolling per-window sweep allowance.
-    ///      An unset cap fails closed.
+    /// @dev Charges `amount` against the token's sweep cap. An unset cap fails closed.
+    ///
+    ///      The cap holds over every 24 hours, not per fixed window: an exit passes only
+    ///      if it plus every capped exit in the trailing SWEEP_WINDOW stays within `cap`,
+    ///      and each exit is logged with its time. So no span of SWEEP_WINDOW ever sees
+    ///      more than `cap` leave, and each exit's share of the cap comes back exactly
+    ///      SWEEP_WINDOW after it was made. A live entry is never overwritten: when all
+    ///      SWEEP_LOG_SIZE slots hold exits from the last 24 hours, the next exit
+    ///      reverts with SweepLogFull until the oldest expires.
     function _consumeSweepAllowance(address token, uint256 amount) private {
         _rejectAliasedNative(token);
         uint256 cap = sweepCap[token];
         if (cap == 0) revert SweepCapNotSet();
         if (cap == SWEEP_CAP_UNLIMITED) return;
 
-        uint256 swept = sweptInWindow[token];
-        if (block.timestamp >= sweepWindowStart[token] + SWEEP_WINDOW) {
-            sweepWindowStart[token] = block.timestamp;
-            swept = 0;
+        (uint256 used, uint256 free) = _sweepUsage(token);
+        // The amount must also fit the 192 bits it is packed into, which any real cap does.
+        if (used + amount > cap || amount >> 192 != 0) revert SweepCapExceeded();
+        if (free == SWEEP_LOG_SIZE) revert SweepLogFull();
+        _sweepLog[token][free] = block.timestamp << 192 | amount;
+    }
+
+    /// @dev What left the contract through capped exits in the trailing SWEEP_WINDOW, and
+    ///      a log slot free for the next exit (SWEEP_LOG_SIZE when there is none).
+    function _sweepUsage(address token) private view returns (uint256 used, uint256 free) {
+        free = SWEEP_LOG_SIZE;
+        uint256[SWEEP_LOG_SIZE] storage log = _sweepLog[token];
+        for (uint256 i = 0; i < SWEEP_LOG_SIZE; i++) {
+            uint256 entry = log[i];
+            if (entry != 0 && (entry >> 192) + SWEEP_WINDOW > block.timestamp) {
+                used += uint192(entry);
+            } else {
+                free = i;
+            }
         }
-        if (swept + amount > cap) revert SweepCapExceeded();
-        sweptInWindow[token] = swept + amount;
+        // A proxy upgraded from 2.1.0: its last fixed window's exits all happened before
+        // sweepWindowStart + SWEEP_WINDOW, so they can be inside the trailing window
+        // only until twice that. Counting the whole total until then is safe.
+        if (block.timestamp < sweepWindowStart[token] + 2 * SWEEP_WINDOW) used += sweptInWindow[token];
+    }
+
+    /// @notice How much of `token` the sweep cap lets leave right now, across every
+    ///         capped exit. type(uint256).max when the cap is SWEEP_CAP_UNLIMITED.
+    function sweepAllowance(address token) external view returns (uint256) {
+        uint256 cap = sweepCap[token];
+        if (cap == SWEEP_CAP_UNLIMITED) return cap;
+        (uint256 used, uint256 free) = _sweepUsage(token);
+        return used >= cap || free == SWEEP_LOG_SIZE ? 0 : cap - used;
     }
 
     // ====== Signer Rotation ======
@@ -765,6 +836,11 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     // All of them are additionally bounded by the per-token sweep cap, so raising the
     // amount that can leave the contract in one window always costs a queueSweepCap
     // delay first — including on the timelocked path.
+    //
+    // These are whole-treasury exits: unlike sweepMerchantBacking they do not hold back
+    // accrued platform fees. When one takes the balance below platformFeeAccrued, the
+    // fees it took count as swept to its recipient (see _sendOut), so the fee ledger
+    // never claims fees the contract no longer holds.
 
     function withdraw(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
@@ -780,7 +856,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     function withdrawAll(address token, address to) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (withdrawalDelay > 0) revert TimelockActive();
-        uint256 balance = token == address(0) ? address(this).balance : IERC20(token).balanceOf(address(this));
+        uint256 balance = _heldBalance(token);
         if (balance == 0) revert ZeroAmount();
         _doWithdraw(token, to, balance);
     }
@@ -802,12 +878,19 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     /// @notice Raises the withdrawal delay. Takes effect immediately — tightening a
     ///         control is always safe.
-    /// @dev Lowering must go through queueWithdrawalDelay/applyPendingChange so the
+    /// @dev Lowering must go through queueWithdrawalDelay/applyWithdrawalDelay so the
     ///      reduction is itself subject to the delay currently in force.
+    ///
+    ///      It also restarts the clock on everything already queued: upgrades, cap
+    ///      raises, delay cuts and withdrawals all have to wait the full new delay from
+    ///      now (see _requireUnlocked), so raising the delay works as an emergency brake
+    ///      on entries queued under the shorter one. Calling it with the current value
+    ///      restarts the clock without changing the delay.
     function setWithdrawalDelay(uint256 delay) external onlyOwner {
         if (delay > MAX_WITHDRAWAL_DELAY) revert DelayTooLong();
         if (delay < withdrawalDelay) revert NotALoosening();
         withdrawalDelay = delay;
+        withdrawalDelayRaisedAt = block.timestamp;
         emit WithdrawalDelayUpdated(delay);
     }
 
@@ -839,9 +922,14 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     ///      queueSweepCap/applySweepCap pair lands, a full `withdrawalDelay` later.
     ///      That is deliberate: it is the emergency brake, and setNativeAliasToken
     ///      requires it for native. For "unlimited", queue SWEEP_CAP_UNLIMITED.
+    ///
+    ///      Any raise already queued for `token` is cancelled, so a tightening always
+    ///      supersedes a pending loosening and the brake holds in a single call.
     function setSweepCap(address token, uint256 cap) external onlyOwner {
         if (cap > sweepCap[token]) revert NotALoosening();
         sweepCap[token] = cap;
+        bytes32 key = _sweepCapKey(token);
+        if (_pendingChanges[key].unlockTime != 0) _cancelPending(key);
         emit SweepCapUpdated(token, cap);
     }
 
@@ -858,6 +946,10 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
 
     function cancelPendingChange(bytes32 key) external onlyOwner {
         if (_pendingChanges[key].unlockTime == 0) revert NoPendingChange();
+        _cancelPending(key);
+    }
+
+    function _cancelPending(bytes32 key) private {
         delete _pendingChanges[key];
         emit PendingChangeCancelled(key);
     }
@@ -879,9 +971,19 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     function _consumePending(bytes32 key) private returns (uint256 value) {
         PendingChange memory pending = _pendingChanges[key];
         if (pending.unlockTime == 0) revert NoPendingChange();
-        if (block.timestamp < pending.unlockTime) revert TimelockNotExpired();
+        _requireUnlocked(pending.unlockTime);
         value = pending.value;
         delete _pendingChanges[key];
+    }
+
+    /// @dev A queued entry unlocks at the time it was given, and never before the full
+    ///      current delay has passed since the delay was last set. An entry queued
+    ///      after that always satisfies the second check, so it only ever binds
+    ///      entries queued under an earlier, shorter delay.
+    function _requireUnlocked(uint256 unlockTime) private view {
+        if (block.timestamp < unlockTime || block.timestamp < withdrawalDelayRaisedAt + withdrawalDelay) {
+            revert TimelockNotExpired();
+        }
     }
 
     function queueWithdrawal(address token, address to, uint256 amount) external onlyOwner returns (bytes32) {
@@ -914,7 +1016,7 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         if (req.unlockTime == 0) revert WithdrawalNotFound();
         if (req.executed) revert WithdrawalAlreadyExecuted();
         if (req.cancelled) revert WithdrawalAlreadyCancelled();
-        if (block.timestamp < req.unlockTime) revert TimelockNotExpired();
+        _requireUnlocked(req.unlockTime);
 
         // Effects before interactions (CEI pattern)
         req.executed = true;
@@ -1190,12 +1292,19 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     ///      The amount is `balance % unit`, so the ERC-20 view of the balance is
     ///      unchanged by construction. That bound is why this skips the sweep cap and
     ///      the timelock.
+    ///
+    ///      The bound has to hold even when the alias is not the canonical token, e.g.
+    ///      one set by setNativeAliasToken on a chain where native is real money of its
+    ///      own. So an alias reporting fewer than MIN_ALIAS_DECIMALS is refused, which
+    ///      keeps the remainder under 1e12 wei on any chain. decimals() is read at the
+    ///      point of use because the token can change what it returns.
     function rescueNativeDust(address to) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         address aliasToken = nativeAliasToken;
         if (aliasToken == address(0)) revert NativeNotAliased();
 
         uint8 aliasDecimals = IERC20Metadata(aliasToken).decimals();
+        if (aliasDecimals < MIN_ALIAS_DECIMALS) revert AliasDecimalsUnsupported();
         if (aliasDecimals >= NATIVE_DECIMALS) revert ZeroAmount(); // no sub-unit to rescue
         uint256 dust = address(this).balance % (10 ** (NATIVE_DECIMALS - aliasDecimals));
         if (dust == 0) revert ZeroAmount();
@@ -1298,6 +1407,11 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
     ///      are denominated in. Only sub-unit dust (< 1e12 native on Arc, i.e. under a
     ///      millionth of a dollar) is not addressable that way; rescueNativeDust
     ///      sends it on its own path.
+    ///
+    ///      It also keeps platformFeeAccrued backed. Only the whole-treasury exits
+    ///      (withdraw, withdrawAll, executeWithdrawal, recoverToken) can take the balance
+    ///      below it. When one does, the fees it took left with it, so they are booked
+    ///      as swept to the same recipient.
     function _sendOut(address token, address to, uint256 amount) private {
         _rejectAliasedNative(token);
         if (token == address(0)) {
@@ -1307,18 +1421,39 @@ contract TakumiPay is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable
         } else {
             IERC20(token).safeTransfer(to, amount);
         }
+
+        uint256 fees = platformFeeAccrued[token];
+        if (fees != 0) {
+            uint256 left = _heldBalance(token);
+            if (left < fees) {
+                platformFeeAccrued[token] = left;
+                emit PlatformFeesSwept(token, to, fees - left);
+            }
+        }
+    }
+
+    function _heldBalance(address token) private view returns (uint256) {
+        return token == address(0) ? address(this).balance : IERC20(token).balanceOf(address(this));
     }
 
     /// @dev The refId check for the two unsigned entrypoints (bookings, point
-    ///      deposits): a refId already used by any of the three flows is rejected, so
-    ///      one key can never succeed on-chain twice while the API credits it once.
+    ///      deposits): a refId already used by any of the three flows is rejected, so a
+    ///      client that reuses one key across flows cannot pay twice for a single
+    ///      credit.
     ///
     ///      processMerchantPayment deliberately checks only _consumedRefs. Its refId is
     ///      the backend's PaymentIntent ULID, and if it also checked the unsigned maps,
     ///      anyone who saw a pending payment could front-run it with a booking or
-    ///      deposit under the same refId and make that quote permanently unpayable. The
-    ///      direction left open needs someone to use a ULID before the backend mints it,
-    ///      which its 80 random bits rule out.
+    ///      deposit under the same refId and make that quote permanently unpayable.
+    ///
+    ///      The other direction is open: a ULID is public once its quote is in the
+    ///      mempool, so a booking or deposit can claim it first, and the merchant
+    ///      payment still succeeds. That costs the payer nothing, because merchant
+    ///      settlement reads only this contract's merchant record (getMerchantPaymentByRef)
+    ///      and the payment's own MerchantPaymentProcessed log, never the booking or
+    ///      deposit maps. The squatting record cannot be credited either, because the
+    ///      API matches bookings and deposits on payer, token and amount. Anything that
+    ///      credits from on-chain records must keep the flows apart in the same way.
     function _isRefIdUsed(string calldata refId) private view returns (bool) {
         return refToTx[refId] != 0
             || pointRefToDeposit[refId] != 0

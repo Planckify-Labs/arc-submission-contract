@@ -5,12 +5,15 @@ run against the public mirror of this repo. Fixes ship in **2.2.0**. Storage lay
 unchanged from 2.1.0 (no new state variables, `__gap` untouched), so live proxies upgrade
 in place. Regression tests: `test/TakumiPayHardening.t.sol`.
 
+> 2.2.0 was never deployed. Its fixes ship together with the fixes from the Olympix scan
+> of 2.2.0 in **2.3.0**; see [olympix-bugpocer-response-2.2.0.md](olympix-bugpocer-response-2.2.0.md).
+
 | ID | Finding | Disposition |
 |---|---|---|
 | C-1 | Native alias not set at init | **Fixed.** `initialize` takes `initialNativeAliasToken` and sets it atomically. On Arc (5042, 5042002) a zero alias reverts `NativeAliasRequired`; the deploy script passes `0x3600…0000` there automatically. |
 | H-1 | Upgrade has no timelock | **Fixed.** `queueUpgrade(impl)` puts the upgrade in the existing pending-change queue. `_authorizeUpgrade` accepts only the queued implementation after `withdrawalDelay`, and each queued entry works once. With one EOA owner this buys detection time, not a veto; a multisig owner is still recommended. |
 | H-2 | Late alias strands native state | **Fixed.** `setNativeAliasToken` reverts on outstanding native fees (`NativeFeesOutstanding`) or a non-zero native sweep cap (`NativeSweepCapSet`). Requiring the cap to be 0 also means no queued native withdrawal could ever execute. Native *balance* was never stranded: it is the same money as the ERC-20 view. |
-| M-1 | refId unique per flow, not globally | **Fixed.** refId is an idempotency key: the API claims it in one unique `ReferenceId` table for purchases and point deposits, then credits only the first use. In 2.1.0 the same refId could succeed on-chain as both a booking and a deposit, so the second payment was taken but never credited. `createTransaction`, `createTransactionBatch` and `depositPoints` now reject a refId used by **any** of the three flows (`_isRefIdUsed`; it reads the existing maps, so refIds used before the upgrade count too). `processMerchantPayment` still checks only its own map, on purpose: its refId is the backend's PaymentIntent ULID, and checking the unsigned maps would let anyone front-run a pending payment with a cheap booking and make the signed quote unpayable. The opposite direction would need someone to use a ULID before the backend mints it. |
+| M-1 | refId unique per flow, not globally | **Fixed.** refId is an idempotency key: the API credits each booking or deposit once. Purchases claim it in the unique `ReferenceId` table; point deposits, since 2026-10-23, are idempotent per (user, chain, contract, refId) instead. In 2.1.0 the same refId could succeed on-chain as both a booking and a deposit, so the second payment was taken but never credited. `createTransaction`, `createTransactionBatch` and `depositPoints` now reject a refId used by **any** of the three flows (`_isRefIdUsed`; it reads the existing maps, so refIds used before the upgrade count too). `processMerchantPayment` still checks only its own map, on purpose: its refId is the backend's PaymentIntent ULID, and checking the unsigned maps would let anyone front-run a pending payment with a cheap booking and make the signed quote unpayable. The opposite direction (a booking or deposit claiming a pending quote's ULID first) is open, since the ULID is public in the mempool, but harmless: merchant settlement reads only the merchant record. See 5.1.1 in [the Olympix response](olympix-bugpocer-response-2.2.0.md). |
 | M-2 | Native sweep cap unit mismatch on Arc | **Resolved by C-1**, since the native path can no longer be live on Arc. `sweepCap` NatSpec now states caps use the token's own decimals. |
 | M-3 | Sub-unit native dust locked | **Fixed.** `rescueNativeDust(to)` sends `balance % 10^(18 − aliasDecimals)`. By construction this never moves a whole ERC-20 unit, so it skips the cap and timelock. The amount at stake is always under $0.000001. |
 | L-1 | `getTransactionsInRange` O(txCounter) | **Fixed without changing the ABI.** Ids are append-ordered and `block.timestamp` never decreases, so matches are one contiguous run found by binary search: O(log n + limit). A fuzz test checks it against a linear scan. |
@@ -55,8 +58,5 @@ items and how each was handled:
 
 ## Upgrading the live proxies
 
-2.1.0's `_authorizeUpgrade` predates the timelock, so the move to 2.2.0 is a single
-owner call. `UpgradeTakumiPay` detects this. Every later upgrade waits out the proxy's
-`withdrawalDelay` (1 day on Arc mainnet), and that includes rolling back to 2.1.0. Rehearse first with
-`RUN_FORK_TESTS=true forge test --match-contract ArcUpgradeFork -vv`. Once the implementation is
-deployed, add `NEW_IMPLEMENTATION=<address>` to rehearse against the exact bytecode the owner will switch to.
+Superseded: the live proxies go from 2.1.0 straight to 2.3.0. See "Upgrade readiness" in
+[the Olympix response](olympix-bugpocer-response-2.2.0.md) and the README's Upgrade section.

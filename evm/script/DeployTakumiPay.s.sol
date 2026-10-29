@@ -40,7 +40,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 ///        cast send $PROXY "applySweepCap(address)" <token>
 ///
 ///   4. Only now raise the withdrawal delay. This also permanently disables the instant
-///      withdraw/withdrawAll/recoverToken paths, and becomes the upgrade timelock:
+///      withdraw/withdrawAll/recoverToken paths, and becomes the upgrade timelock. Anything
+///      still queued from steps 1-3 now has to wait the full delay as well:
 ///        cast send $PROXY "setWithdrawalDelay(uint256)" 86400
 ///
 /// Amounts follow the token's own decimals: 6 for USDC-style ERC-20s, 18 for native.
@@ -90,7 +91,8 @@ contract DeployTakumiPay is Script {
 
 /// @notice Deploys a new TakumiPay implementation and starts upgrading a proxy to it.
 ///
-/// From 2.2.0 an upgrade is a queued change: queueUpgrade, wait out the proxy's
+/// From 2.3.0 an upgrade is a queued change, bound to the new implementation's code
+/// (2.2.0 introduced the queue but was never deployed): queueUpgrade, wait out the proxy's
 /// withdrawalDelay, then upgradeToAndCall. This script deploys the implementation and
 /// queues it, and finishes the upgrade in the same run only when nothing has to wait:
 ///   - the proxy runs 2.1.0, whose _authorizeUpgrade predates the timelock, or
