@@ -162,8 +162,9 @@ impl TakumiPay {
 
     // ── Sweep rate limit ────────────────────────────────────────────
     // Sweeps bypass the withdrawal timelock by design (merchant float has to
-    // settle daily), so a per-token rolling cap bounds what a leaked owner key
-    // can drain per window. Raising a cap is a loosening and is queued.
+    // settle daily), so a per-token cap bounds what a leaked owner key can move
+    // in any 24 hours. Every exit draws on it, withdrawals included. Raising a
+    // cap is a loosening and is queued.
 
     pub fn set_sweep_cap(env: Env, owner: Address, token: Address, cap: i128) -> Result<(), Error> {
         treasury::set_sweep_cap(&env, owner, token, cap)
@@ -188,6 +189,17 @@ impl TakumiPay {
 
     pub fn get_sweep_cap(env: Env, token: Address) -> i128 {
         treasury::get_sweep_cap(&env, token)
+    }
+
+    /// What the sweep cap lets leave right now, across every capped exit.
+    pub fn get_sweep_allowance(env: Env, token: Address) -> i128 {
+        treasury::sweep_allowance(&env, token)
+    }
+
+    /// When `set_withdrawal_delay` last ran; queued entries also wait the full
+    /// current delay from then.
+    pub fn get_withdrawal_delay_raised_at(env: Env) -> u64 {
+        withdraw::get_delay_raised_at(&env)
     }
 
     // ── Withdrawals ─────────────────────────────────────────────────

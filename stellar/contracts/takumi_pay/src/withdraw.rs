@@ -1,4 +1,4 @@
-use soroban_sdk::{token, Address, Env};
+use soroban_sdk::{Address, Env};
 
 use crate::admin::{bump_persistent, get_config, require_owner, save_config};
 use crate::errors::Error;
@@ -6,11 +6,43 @@ use crate::events::{
     PendingDelayCancelled, PendingDelayQueued, WithdrawalCancelled,
     WithdrawalDelayUpdated, WithdrawalExecuted, WithdrawalQueued, WithdrawEvent,
 };
-use crate::types::{DataKey, PendingDelay, WithdrawalRequest, MAX_WITHDRAWAL_DELAY};
+use crate::treasury::{consume_sweep_allowance, send_out};
+use crate::types::{
+    Config, DataKey, PendingDelay, WithdrawalRequest, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_TO,
+    MAX_WITHDRAWAL_DELAY,
+};
+
+/// A queued entry unlocks at the time it was given, and never before the full
+/// current delay has passed since `set_withdrawal_delay` last ran. An entry
+/// queued after that always satisfies the second check, so it only ever binds
+/// entries queued under an earlier, shorter delay.
+pub(crate) fn require_unlocked(env: &Env, config: &Config, unlock_time: u64) -> Result<(), Error> {
+    let now = env.ledger().timestamp();
+    let raised_at: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::DelayRaisedAt)
+        .unwrap_or(0);
+    if now < unlock_time || now < raised_at + config.withdrawal_delay {
+        return Err(Error::TimelockNotExpired);
+    }
+    Ok(())
+}
+
+pub fn get_delay_raised_at(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::DelayRaisedAt)
+        .unwrap_or(0)
+}
 
 /// Immediate withdrawal — only usable while no timelock delay is configured.
 /// Once `set_withdrawal_delay` is set above 0, callers must use
 /// queue/execute so every withdrawal has a mandatory cooling-off period.
+///
+/// Like every exit it is bounded by the token's sweep cap. It is a
+/// whole-treasury exit: it does not hold back accrued platform fees, and fees it
+/// takes are booked as swept (see `send_out`).
 pub fn withdraw(
     env: &Env,
     owner: Address,
@@ -27,12 +59,9 @@ pub fn withdraw(
     if config.withdrawal_delay != 0 {
         return Err(Error::TimelockActive);
     }
+    consume_sweep_allowance(env, &token, amount)?;
 
-    token::TokenClient::new(env, &token).transfer(
-        &env.current_contract_address(),
-        &recipient,
-        &amount,
-    );
+    send_out(env, &token, &recipient, amount);
 
     WithdrawEvent {
         token,
@@ -49,6 +78,12 @@ pub fn withdraw(
 /// so the reduction is itself subject to the delay currently in force. Without
 /// that the timelock is decorative: an owner key that leaks would simply set the
 /// delay to 0 and withdraw in the same transaction.
+///
+/// It also restarts the clock on everything already queued: sweep cap raises,
+/// delay cuts and withdrawals all wait the full new delay from now (see
+/// `require_unlocked`), so raising the delay works as an emergency brake on
+/// entries queued under the shorter one. Calling it with the current value
+/// restarts the clock without changing the delay.
 pub fn set_withdrawal_delay(env: &Env, owner: Address, delay: u64) -> Result<(), Error> {
     let mut config = get_config(env)?;
     require_owner(&config, &owner)?;
@@ -61,6 +96,12 @@ pub fn set_withdrawal_delay(env: &Env, owner: Address, delay: u64) -> Result<(),
     }
     config.withdrawal_delay = delay;
     save_config(env, &config);
+    env.storage()
+        .instance()
+        .set(&DataKey::DelayRaisedAt, &env.ledger().timestamp());
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_TO);
 
     WithdrawalDelayUpdated { delay }.publish(env);
     Ok(())
@@ -99,9 +140,7 @@ pub fn apply_withdrawal_delay(env: &Env, owner: Address) -> Result<(), Error> {
         .persistent()
         .get(&key)
         .ok_or(Error::NoPendingChange)?;
-    if env.ledger().timestamp() < pending.unlock_time {
-        return Err(Error::TimelockNotExpired);
-    }
+    require_unlocked(env, &config, pending.unlock_time)?;
     env.storage().persistent().remove(&key);
 
     config.withdrawal_delay = pending.value;
@@ -197,19 +236,14 @@ pub fn execute_withdrawal(env: &Env, owner: Address, nonce: u64) -> Result<(), E
     if request.cancelled {
         return Err(Error::AlreadyCancelled);
     }
-    if env.ledger().timestamp() < request.unlock_time {
-        return Err(Error::TimelockNotExpired);
-    }
+    require_unlocked(env, &config, request.unlock_time)?;
+    consume_sweep_allowance(env, &request.token, request.amount)?;
 
     request.executed = true;
     env.storage().persistent().set(&key, &request);
     bump_persistent(env, &key);
 
-    token::TokenClient::new(env, &request.token).transfer(
-        &env.current_contract_address(),
-        &request.recipient,
-        &request.amount,
-    );
+    send_out(env, &request.token, &request.recipient, request.amount);
 
     WithdrawalExecuted { nonce }.publish(env);
     Ok(())

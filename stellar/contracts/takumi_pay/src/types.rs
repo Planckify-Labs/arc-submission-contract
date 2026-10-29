@@ -43,25 +43,40 @@ pub enum DataKey {
     AllowedPaymentToken(Address),
     /// nonce -> WithdrawalRequest.
     Withdrawal(u64),
-    /// token -> max sweepable per window. Absent or 0 blocks sweeps entirely.
+    /// token -> max that may leave in any SWEEP_WINDOW. Absent or 0 blocks every
+    /// exit entirely.
     SweepCap(Address),
-    /// token -> amount already swept in the current window.
-    SweptInWindow(Address),
-    /// token -> ledger timestamp the current sweep window opened at.
-    SweepWindowStart(Address),
+    /// token -> Vec<SweepExit>: the capped exits made in the trailing
+    /// SWEEP_WINDOW, at most SWEEP_LOG_SIZE of them.
+    SweepLog(Address),
+    /// Ledger timestamp `set_withdrawal_delay` last ran at (instance storage).
+    /// Queued loosenings and withdrawals also wait the full current delay from
+    /// then, so raising the delay reaches entries queued under a shorter one.
+    DelayRaisedAt,
     /// Queued reduction of the withdrawal delay.
     PendingWithdrawalDelay,
     /// token -> queued increase of the sweep cap.
     PendingSweepCap(Address),
 }
 
-/// Rolling window for the treasury sweep rate limit (24h).
+/// Span the treasury sweep cap holds over (24h).
 ///
 /// Sweeps deliberately bypass the withdrawal timelock — merchant float has to
 /// settle daily and a 7-day queue would break that. The cap gives back what the
-/// timelock was there for: a leaked owner key can drain at most `SweepCap` per
-/// window, visibly, instead of emptying the contract in one transaction.
+/// timelock was there for: a leaked owner key can move at most `SweepCap` in any
+/// 24 hours, visibly, instead of emptying the contract in one transaction.
 pub const SWEEP_WINDOW: u64 = 24 * 60 * 60;
+
+/// Most capped exits one token can make within SWEEP_WINDOW.
+pub const SWEEP_LOG_SIZE: u32 = 16;
+
+/// One capped exit, kept in the token's SweepLog until it is SWEEP_WINDOW old.
+#[contracttype]
+#[derive(Clone)]
+pub struct SweepExit {
+    pub at: u64,
+    pub amount: i128,
+}
 
 /// Sentinel meaning "no cap". Must be set explicitly — it is not the default.
 pub const SWEEP_CAP_UNLIMITED: i128 = i128::MAX;

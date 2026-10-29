@@ -39,6 +39,29 @@ contracts/takumi_pay/src/
   test.rs       unit tests (soroban-sdk testutils)
 ```
 
+## Treasury controls
+
+The same rules as the EVM contract since 2.3.0 (see
+`../evm/docs/olympix-bugpocer-response-2.2.0.md`; the Olympix scan was of the EVM
+contract, and every finding that applies here is fixed the same way):
+
+- **One sweep cap per token bounds every exit**: both sweeps, `withdraw` and
+  `execute_withdrawal`. No 24-hour span can see more than the cap leave: each exit is
+  logged with its time and frees its share exactly 24 hours later
+  (`get_sweep_allowance` shows what can leave now). The log holds 16 exits per token,
+  and a 17th within 24 hours fails with `SweepLogFull`. An unset cap fails closed, and
+  `set_sweep_cap(token, 0)` is the emergency brake: it also cancels any queued raise.
+- **Raising a cap and lowering the delay are queued** behind `withdrawal_delay`.
+  Raising the delay, or calling `set_withdrawal_delay` again with the current value,
+  restarts the clock on everything already queued: cap raises, delay cuts and
+  withdrawals.
+- **The fee ledger stays backed.** `sweep_merchant_backing` cannot take the balance
+  behind accrued platform fees. When a withdrawal takes it, those fees are booked as
+  swept to its recipient (`PlatformFeesSwept`).
+- **No in-place upgrade.** The contract has no `update_current_contract_wasm` entry
+  point, so each version is a fresh instance (`deployments/<network>/vN.json`). Clients
+  then move to the new contract id.
+
 ## Build
 
 ```sh

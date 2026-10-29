@@ -37,4 +37,5 @@ pub enum Error {
     SweepCapExceeded = 31,
     NotALoosening = 32,
     NoPendingChange = 33,
+    SweepLogFull = 34,
 }
