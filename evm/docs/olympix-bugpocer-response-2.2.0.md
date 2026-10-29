@@ -2,7 +2,8 @@
 
 Scan: BugPoCer Full Scan of `src/TakumiPay.sol` at commit `af071e0`, 23 October 2026
 (2 Medium, 28 Low, 11 distinct issues). Mutation testing: 248 mutants, 193 killed.
-Response date: 29 October 2026.
+Response date: 29 October 2026. Fixes: commit `df0bb24` (TakumiPay 2.3.0), on top of the
+scanned `af071e0`.
 
 2.2.0 was never deployed. Every live proxy still runs 2.1.0. The fixes below ship in
 **2.3.0**, which replaces 2.2.0 as the next release and is the version the live proxies
