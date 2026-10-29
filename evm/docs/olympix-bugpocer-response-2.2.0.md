@@ -1,8 +1,5 @@
 # TakumiPay on Arc: our response to the Olympix scan
 
-Thanks for the scan and the mutation run. Both turned up things we hadn't seen, and the
-contract is better for it. Below is what we did with each finding.
-
 **Scope:** the BugPoCer Full Scan of `src/TakumiPay.sol` at commit `af071e0` (2 Medium,
 28 Low, 11 distinct issues), plus the mutation run (248 mutants, 193 killed). This is
 the contract we run on Arc.
@@ -67,10 +64,10 @@ reason we didn't change code. Tests are in `test/TakumiPayAuditFixes.t.sol` unle
 | 5.2.8 | Dust-priced booking | Not credited: the API checks the amount | 5.2.8 below |
 | 5.2.9 | Empty or later-changed implementation queued | Blocked | `test_5_2_9_revert_queueUpgrade_addressWithoutCode`, `…queueStoresCodehash`, `…revert_upgrade_whenCodeChangedAfterQueue` |
 
-## First, a correction to what we told you
+## Correction to the context we supplied
 
 During context validation we said our API "credits by refId only, first use wins". That
-was wrong, sorry. Several findings (5.1.1, 5.2.3, 5.2.6b/c, 5.2.8) build their impact on
+was inaccurate, and several findings (5.1.1, 5.2.3, 5.2.6b/c, 5.2.8) build their impact on
 it. Here's how crediting actually works:
 
 - **Bookings** (`createTransaction`, `createTransactionBatch`) are credited only once
@@ -140,7 +137,7 @@ because `decimals()` is read live and a token can change what it returns. Tests:
 
 ### 5.2.1 Pending timelock entries survive a `withdrawalDelay` increase (a–g): fixed
 
-Good catch. Raising the delay is the obvious thing to do in an emergency, and it didn't
+Agreed. Raising the delay is the obvious thing to do in an emergency, and it didn't
 reach anything already queued: upgrades, cap raises, delay cuts or withdrawals. The
 runbook case (f/g) was real too.
 
@@ -295,7 +292,7 @@ address too. Tests: `test_5_2_9_revert_queueUpgrade_addressWithoutCode`,
 `test_5_2_9_revert_upgrade_whenCodeChangedAfterQueue`, where `vm.etch` swaps the code
 after queuing.
 
-### Bonus: the `__gap` NatSpec
+### Also fixed: the `__gap` NatSpec
 
 The contract header said `__gap` reserves 50 slots when the array actually had 45. It now
 states the rule (append before `__gap`, shrink it by the same number of slots) instead of a
@@ -334,8 +331,8 @@ We also mutated every line the fixes added, 19 mutants of our own:
 - the upgrade queue storing the address instead of the codehash.
 
 All 19 are killed. Across the 74 mutants run against the final 2.3.0 code, the only
-survivors are the two equivalent ones. If you'd like to run your own mutation pass on
-2.3.0, we'd welcome it.
+survivors are the two equivalent ones. A mutation pass of your own against 2.3.0 is
+welcome.
 
 ## Upgrade readiness
 
@@ -391,5 +388,3 @@ Clients move straight from 2.1.0, so they also pick up the 2.2.0 changes listed 
 
 None of our off-chain clients read the changed getters. The API and the mobile app only
 carry them in their ABI copies.
-
-Thanks again for the thorough work. Happy to answer any questions on the above.
