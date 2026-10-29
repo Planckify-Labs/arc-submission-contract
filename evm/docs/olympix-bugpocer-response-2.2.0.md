@@ -336,6 +336,21 @@ survivors are the two equivalent ones.
 
 We would welcome a mutation pass of your own against 2.3.0.
 
+## The same fixes on our other chains
+
+TakumiPay also runs on Solana (devnet) and Stellar (testnet), with the same treasury
+design. Those contracts were outside the scan, but they shared the weaknesses behind
+5.2.1, 5.2.2, 5.2.4 and 5.2.5, and they have been fixed the same way. Both also had a gap
+the EVM contract had already closed in 2.1.0: their withdrawals skipped the sweep cap.
+
+- **Stellar** (commit `dd90852`): 16 new tests, each replaying one of these attack paths.
+  The contract has no in-place upgrade, so the fixes ship as a fresh instance.
+- **Solana** (commit `db2fd4e`): the timing rules are unit-tested, including a randomized
+  24h invariant, and the fixes are exercised on a local validator. The upgrade, including
+  the migration that grows the accounts the deployed program created, was rehearsed from a
+  dump of the deployed devnet program.
+- 5.1.2 (native alias) and 5.2.9 (upgrade queue) have no counterpart on either chain.
+
 ## Upgrade readiness
 
 All eight live proxies (Arc mainnet and testnet, Arbitrum One and Sepolia, Monad mainnet
