@@ -6,7 +6,6 @@
   "proxy": "0xcC1e6F1C95Ee41EC171d344D703d60e3CE905F1d",
   "implementation": "0x731eDAC9c0390D5a4788fEa3cd58ee849f4a6d6E",
   "owner": "0xc84dEa8032fF10c0cf0a20e0C709299d3E832146",
-  "pendingOwnerUntilAccepted": true,
   "backendSigner": "0xc2eEa50663ea36239474d0F30497547d12BeDD14",
   "deployedBy": "0x963D34f0f04223655d13198B0065ea98E1058593",
   "deployedAt": "2026-11-10",
@@ -51,7 +50,8 @@
     }
   ],
   "todo": {
-    "ownership": "The admin wallet 0xc84d\u20262146 must call acceptOwnership (contract-admin, ?chain=5042-dev).",
-    "apiCutover": "Dev API: set EVM_QUOTE_SIGNER_PRIVATE_KEY to the dev key (~/.takumipay-secrets/arc-dev-quote-signer.key) and repoint the dev DB SmartContract row smart-contract-payment-arc-mainnet to this proxy, then clear the Valkey cache. Dev's other chains still trust the old public signer and stop quoting once the key changes."
+    "ownership": "Done 2026-11-10: 0xc84d\u20262146 accepted ownership (verified owner() on-chain, pendingOwner 0x0).",
+    "apiCutover": "Done 2026-11-10: dev Dokploy api compose (staging) runs EVM_QUOTE_SIGNER_PRIVATE_KEY = the dev key (~/.takumipay-secrets/arc-dev-quote-signer.key, derives 0xc2eE\u2026DD14) and the dev DB row smart-contract-payment-arc-mainnet points at this proxy. Dev's Arc testnet / Monad / Arbitrum contracts still trust the old public signer, so dev can no longer sign quotes for them.",
+    "e2eNotYetRun": "Live smoke test (depositPoints / processMerchantPayment) against dev still pending."
   }
 }
