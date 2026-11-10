@@ -1,0 +1,57 @@
+{
+  "network": "arc-mainnet-dev",
+  "chainId": 5042,
+  "version": "2.3.0",
+  "purpose": "Dev / preview-build stack on Arc mainnet. Same implementation as production, separate proxy and separate quote signer.",
+  "proxy": "0xcC1e6F1C95Ee41EC171d344D703d60e3CE905F1d",
+  "implementation": "0x731eDAC9c0390D5a4788fEa3cd58ee849f4a6d6E",
+  "owner": "0xc84dEa8032fF10c0cf0a20e0C709299d3E832146",
+  "pendingOwnerUntilAccepted": true,
+  "backendSigner": "0xc2eEa50663ea36239474d0F30497547d12BeDD14",
+  "deployedBy": "0x963D34f0f04223655d13198B0065ea98E1058593",
+  "deployedAt": "2026-11-10",
+  "compiler": {
+    "solc": "0.8.30",
+    "evmVersion": "cancun",
+    "optimizerRuns": 200,
+    "viaIR": true
+  },
+  "supersedes": {
+    "proxy": "0x9EEC5aD4FC092fD468A8114007e541238F4Ba5ee",
+    "reason": "The old dev proxy's owner 0x0141\u20264DB6 was compromised and is no longer used, and it trusted the public quote-signer key from api/.env.example. It is abandoned and must not be upgraded or used."
+  },
+  "deployTxs": {
+    "proxy": "0xe441ea3fd7fd77b0780838ff5ba309ef05ad014962702e04facc719169e6ea68"
+  },
+  "postDeployConfig": [
+    {
+      "step": 1,
+      "call": "addAllowedPaymentToken(0x3600\u20260000)",
+      "tx": "0xc4f9602a4a5602ba3f359ff800e37fe0d587be8d8bcfa43de41b515ec2c2c204"
+    },
+    {
+      "step": 2,
+      "call": "queueSweepCap(USDC, 1000000000)",
+      "tx": "0x0e1fa1fa2cbb8e360c87bf3d104e61b3450842f4dc740622f6e45fee52d837a7"
+    },
+    {
+      "step": 3,
+      "call": "applySweepCap(USDC)",
+      "tx": "0x1a54e2914f623fb0c34e0dcf2bcb87bd2826ea236001ceb0f77080d0d589ceaf"
+    },
+    {
+      "step": 4,
+      "call": "setWithdrawalDelay(86400)",
+      "tx": "0xbadaeab4edb475d2d8ec50f018de65c3539c97b95f071ddc3448013b9cb0e88b"
+    },
+    {
+      "step": 5,
+      "call": "transferOwnership(0xc84dEa8032fF10c0cf0a20e0C709299d3E832146)",
+      "tx": "0xf4c84c49ef59798df5fc72af899c271518424842f54360c1e7507a2fbfa4cb67"
+    }
+  ],
+  "todo": {
+    "ownership": "The admin wallet 0xc84d\u20262146 must call acceptOwnership (contract-admin, ?chain=5042-dev).",
+    "apiCutover": "Dev API: set EVM_QUOTE_SIGNER_PRIVATE_KEY to the dev key (~/.takumipay-secrets/arc-dev-quote-signer.key) and repoint the dev DB SmartContract row smart-contract-payment-arc-mainnet to this proxy, then clear the Valkey cache. Dev's other chains still trust the old public signer and stop quoting once the key changes."
+  }
+}
