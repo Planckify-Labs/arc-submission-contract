@@ -1,9 +1,9 @@
 {
   "network": "arc-mainnet",
   "chainId": 5042,
-  "version": "2.1.0",
+  "version": "2.3.0",
   "proxy": "0xF44Af1f2b422D66D60aAE5ceFCcbCBF299D01aBF",
-  "implementation": "0x752e7760ED69964C6610B8f1dec40aCcEbbfea31",
+  "implementation": "0x731eDAC9c0390D5a4788fEa3cd58ee849f4a6d6E",
   "owner": "0xc84dEa8032fF10c0cf0a20e0C709299d3E832146",
   "backendSigner": "0xAAE453E99614aD70BBB7521947D82f8Aa0eC1D2C",
   "deployedAt": 1791552256,
@@ -76,12 +76,28 @@
       "native": "0"
     },
     "withdrawalDelay": 86400,
-    "verifiedOnchain": "2026-10-11 via cast call: version()=2.1.0, owner()=0xc84d...2146, pendingOwner()=0x0, backendSigner()=0xAAE453E9...1D2C, nativeAliasToken()=USDC ERC-20, allowedPaymentTokens(USDC)=true, sweepCap(USDC)=1000000000, withdrawalDelay()=86400, ERC-1967 implementation slot = implementation above. Config verified on 2026-10-09 before the handover."
+    "verifiedOnchain": "2026-11-10 via cast call: version()=2.3.0, ERC-1967 slot = new implementation, owner/backendSigner/withdrawalDelay(86400)/nativeAliasToken/allowedPaymentTokens(USDC)/sweepCap(1000 USDC) unchanged, paused=false, withdrawalDelayRaisedAt=0, sweepAllowance(USDC)=1000 USDC, proxy USDC balance 3.695832 unchanged."
   },
   "todo": {
     "ownership": "Done: ownership accepted by 0xc84d...2146 (tx in postDeployConfig step 7). The deployer 0x963D...8593 (keystore takumi-arc-prod-deployer) has no remaining role on the contract. Single EOA owner; consider a Safe before scaling volume (upgradeToAndCall is owner-only and instant).",
     "apiCutover": "Done 2026-10-11: SmartContract row for chain 5042 on the remote prod DB points at the new proxy; prod API (Dokploy TakumiPay/production/api) runs with the new EVM_QUOTE_SIGNER_PRIVATE_KEY (derives 0xAAE453E9...1D2C). Dev now runs as a separate Dokploy stack (staging env) with the OLD signer and the old Arc proxy, so Monad/Arbitrum quotes keep working there. Prod no longer signs for Monad/Arbitrum (their contracts still trust the old public signer).",
     "verification": "Not verified; explorer.arc.io/api is behind a Cloudflare challenge. Use the explorer UI or a browser-verified session.",
-    "e2eNotYetRun": "Still pending: live smoke test (depositPoints / processMerchantPayment) against prod after the cutover."
+    "e2eNotYetRun": "Still pending: live smoke test (depositPoints / processMerchantPayment) against prod after the 2.3.0 upgrade."
+  },
+  "previousImplementations": [
+    {
+      "version": "2.1.0",
+      "implementation": "0x752e7760ED69964C6610B8f1dec40aCcEbbfea31"
+    }
+  ],
+  "upgrade": {
+    "from": "2.1.0",
+    "to": "2.3.0",
+    "implementation": "0x731eDAC9c0390D5a4788fEa3cd58ee849f4a6d6E",
+    "implementationDeployTx": "0x397ad5725a3d81962b4188223efae96478d7c101f98bcf15bd3d488d80781d3c",
+    "upgradedAt": "2026-11-10",
+    "by": "0xc84dEa8032fF10c0cf0a20e0C709299d3E832146",
+    "method": "upgradeToAndCall(impl, \"\") via contract-admin, instant (2.1.0 has no queue)",
+    "verifiedOnchain": "2026-11-10 via cast call: version()=2.3.0, ERC-1967 slot = new implementation, owner/backendSigner/withdrawalDelay(86400)/nativeAliasToken/allowedPaymentTokens(USDC)/sweepCap(1000 USDC) unchanged, paused=false, withdrawalDelayRaisedAt=0, sweepAllowance(USDC)=1000 USDC, proxy USDC balance 3.695832 unchanged."
   }
 }
